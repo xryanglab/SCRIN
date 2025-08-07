@@ -1,4 +1,4 @@
-# SCRIN (Subcellular Colocalized RNA Interaction Network)
+# SCRIN: Subcellular Colocalized RNA Interaction Network
 
 Systematic dissections of the subcellular RNA colocalization landscapes in high-resolution spatial transcriptomics.
 
