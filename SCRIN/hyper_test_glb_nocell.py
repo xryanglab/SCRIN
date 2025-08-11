@@ -384,7 +384,7 @@ def hyper_test_glb_nocell(opt):
 
     if rank == 0:
         # Print the options
-        print("\n--- Options ---")
+        print("--- Options ---")
         for arg_name, arg_value in vars(opt).items():
             print(f"{arg_name}: {arg_value}")
         print("--------------------")

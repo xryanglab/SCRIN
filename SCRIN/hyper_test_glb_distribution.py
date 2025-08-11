@@ -554,7 +554,7 @@ def hyper_test_glb_distribution(opt):
 
     if rank == 0:
         # Print the options
-        print("\n--- Options ---")
+        print("--- Options ---")
         for arg_name, arg_value in vars(opt).items():
             print(f"{arg_name}: {arg_value}")
         print("--------------------")
@@ -853,7 +853,7 @@ def hyper_test_glb_distribution(opt):
             print("No distribution shape data. Around count threshold may be too high.")
             df_merge = df_result
 
-        df_merge_pair, df_merge_pair_bh = test_result_df_filter(df_merge, filter_threshold=opt.filter_threshold,
+        df_merge_pair_dedup, df_merge_pair_filter = test_result_df_filter(df_merge, filter_threshold=opt.filter_threshold,
                                                                 keep=opt.pair_keep)
-        df_merge_pair.to_csv(opt.save_path.replace('.csv', '_shape_pair.csv'), index=False)
+        df_merge_pair_filter.to_csv(opt.save_path.replace('.csv', '_shape_pair.csv'), index=False)
 

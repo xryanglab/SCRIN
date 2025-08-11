@@ -46,8 +46,7 @@ def main():
                         help="File path to save co-localization distribution data")
     parser.add_argument("--rtree_path", type=str, default=None, help="path of rtree index")
     parser.add_argument("--save_split_size", type=int, default=100, help="interval of intermediate result saving")
-    parser.add_argument("--num_nodes", type=int, default=6, help="Number of nodes")
-    parser.add_argument("--cores_per_node", type=int, default=16, help="Number of cores per node")
+
     # 其他通用参数
     args = parser.parse_args()
 

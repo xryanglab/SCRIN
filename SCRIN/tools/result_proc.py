@@ -70,13 +70,13 @@ def test_result_df_ratio_proc(file):
 
     #  k: gene_B_around, n: gene_around, N: gene_slice, K: gene_B_slice
     #  odds_ratio = (k * (N - n - K + k)) / (n - k) * (K - k)
-    df_output['odds_ratio'] = (df['gene_B_around'] * (
-            df['gene_slice'] - df['gene_around'] - df['gene_B_slice'] + df['gene_B_around'])) / (
-                               (df['gene_around'] - df['gene_B_around']) * (df['gene_B_slice'] - df['gene_B_around']))
+    # df_output['odds_ratio'] = (df['gene_B_around'] * (
+    #         df['gene_slice'] - df['gene_around'] - df['gene_B_slice'] + df['gene_B_around'])) / (
+    #                            (df['gene_around'] - df['gene_B_around']) * (df['gene_B_slice'] - df['gene_B_around']))
 
     #  risk_ratio = k * (N - n) / n * (K - k)
-    df_output['risk_ratio'] = (df['gene_B_around'] * (df['gene_slice'] - df['gene_around'])) / (
-            df['gene_around'] * (df['gene_B_slice'] - df['gene_B_around']))
+    # df_output['risk_ratio'] = (df['gene_B_around'] * (df['gene_slice'] - df['gene_around'])) / (
+    #         df['gene_around'] * (df['gene_B_slice'] - df['gene_B_around']))
 
     df_output['enrichment_ratio'] = (df['gene_B_around'] / df['gene_around']) / (df['gene_B_slice'] / df['gene_slice'])
 
