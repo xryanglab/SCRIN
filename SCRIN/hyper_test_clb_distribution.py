@@ -225,7 +225,7 @@ def update_recv_asyn(comm, matrix, gene2idx, local_gene2idx, is_idle, local_pool
                     update_local_matrix(matrix, local_update, gene2idx, local_gene2idx)
                     is_idle.set()
                 local_pool.clear()  # Clear the local pool
-        time.sleep(0.05)  # Reduce CPU usage
+        time.sleep(0.01)  # Reduce CPU usage
     print("Async update thread exiting.")
 
 
@@ -409,7 +409,7 @@ def distribute_tasks_dynamic_region(comm, rank, size, tasks, task_processor, tas
                     stop_event.set()
                     break
 
-            time.sleep(0.05)  # Reduce CPU usage
+            time.sleep(0.01)  # Reduce CPU usage
 
         # executor.shutdown()
 
@@ -440,7 +440,7 @@ def distribution_proc_asyn(comm, output_path, is_idle, tag, local_pool=None, loc
                     asyn_update_output_dict(output_dict, local_update)
                 local_pool.clear()  # Clear the local pool after processing
                 is_idle.set()
-        time.sleep(0.05)  # Reduce CPU usage
+        time.sleep(0.01)  # Reduce CPU usage
     # Save the output dictionary to a file
     is_idle.clear()
     output_path_file_count = len(os.listdir(output_path))
@@ -612,7 +612,7 @@ def distribute_tasks_dynamic_multi_asyn(comm, rank, size, tasks, task_processor,
                     stop_event.set()
                     break
 
-            time.sleep(0.05)  # Reduce CPU usage
+            time.sleep(0.01)  # Reduce CPU usage
 
         while not is_idle.is_set():
             time.sleep(0.05)
@@ -1286,9 +1286,17 @@ def hyper_test_clb_distribution(opt):
     if opt.r_dist is not None and opt.distribution_file_path is not None:
         for i in range(1, size):
             if rank == 0:
+                print(f"Processing distribution data for rank {i}...")
                 merged_output_path = os.path.join((opt.distribution_file_path + "_gene_id_merge"), f"rank_{i}")
                 pkl_list = os.listdir(merged_output_path)
+
+                while len(pkl_list) < (size - 1):
+                    print(f"Waiting for more distribution files for rank {i}, current: {len(pkl_list)} / {size - 1}")
+                    time.sleep(3)
+                    pkl_list = os.listdir(merged_output_path)
+
                 pkl_list = [os.path.join(merged_output_path, file) for file in pkl_list if file.endswith('.pkl')]
+                print(f"Found {len(pkl_list)} distribution files to merge for rank {i}.")
                 merged_distribution_dict = merge_distribution_dicts_from_file(pkl_list)
 
                 tuple_dist = [(gene_id, gene_distance_dict) for gene_id, gene_distance_dict in
