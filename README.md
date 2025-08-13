@@ -2,39 +2,83 @@
 
 Systematic dissections of the subcellular RNA colocalization landscapes in high-resolution spatial transcriptomics.
 
-## Requirements
+---
 
-* Python==3.7
-* pandas==2.0.3
-* numpy==1.25.1
+## Requirements & Compatibility
 
-##	 Installation
+The following dependencies are required to run this project.  
+The versions listed have been tested thoroughly and confirmed to be compatible.  
 
-SCRIN can be installed via pypi:
+In most cases, newer versions may also work, as the project relies mainly on stable and widely supported APIs.  
+If you encounter issues, we recommend reverting to the specified versions.
 
+> **Note**  
+> This project has been tested and is currently supported **only on Linux**.  
+> Support for Windows and macOS may be added in the future, but compatibility is not guaranteed at this time.
+
+**Tested Environment:**
+- Python 3.9
+- Linux (Ubuntu-based)
+
+**Required dependencies:**
+- mpi4py==4.1.0  
+- msgpack==1.1.1  
+- numpy==2.0.2  
+- pandas==2.3.1  
+- pyarrow==21.0.0  
+- rtree==1.4.0  
+- scikit-learn==1.6.1  
+- scipy==1.13.1  
+- statsmodels==0.14.5  
+- tools==1.0.2  
+- tqdm==4.67.1  
+
+---
+
+## Installation
+
+Before installing SCRIN, install the dependencies listed in `requirements.txt`:
+
+```bash
+pip install -r requirements.txt
 ```
+
+Once dependencies are installed, SCRIN can be installed in **two ways**:
+
+### 1. Install from PyPI
+```bash
 pip install scrin
 ```
 
+### 2. Install from local clone
+```bash
+git clone https://github.com/xryanglab/SCRIN
+cd SCRIN
+pip install .
+```
+
+---
+
 ## Usage
 
-1
+```bash
+python scrin.py --save_path /path/to/save
+```
+
+---
 
 ## Flags
 
 - **`--save_path`** : Path for saving the results.
 
+---
+
 ## Output
 
-Output sample is in .
+An example output file (`test.csv`) is shown below:
 
-In outputs: <br>
-`ori` is ; <br>
-`sat` is a ; <br>
-
-
-```:test.csv
-gene_A,gene_B,pvalue,qvalue_BH,qvalue_BO,gene_B_around,gene_B_slice,gene_around,gene_slice,gene_A_N,gene_B_N,pair,odds_ratio,risk_ratio,enrichment_ratio
+```
+gene_A,gene_B,pvalue,qvalue_BH,qvalue_BO,gene_B_around,gene_B_slice,gene_around,gene_slice,gene_A_N,gene_B_N,pair,enrichment_ratio
 Kcnj8,Vtn,0.0,0.0,0.0,566,51096,3603,4885769,2241,51096,Kcnj8_Vtn,17.820363130077027,15.17803020428641,15.020977497702212
 Bgn,Vtn,0.0,0.0,0.0,1728,51096,15717,4885769,9904,51096,Bgn_Vtn,12.062024287226444,10.84581394375585,10.512841372618968
 Cspg4,Vtn,0.0,0.0,0.0,2074,51096,20569,4885769,12918,51096,Cspg4_Vtn,11.017065217111972,10.007031026811507,9.641433282377363
@@ -47,8 +91,14 @@ Flt1,Cldn5,0.0,0.0,0.0,2066,46402,50865,4885769,41692,46402,Cldn5_Flt1,4.5745659
 Unc5b,Sox10,5.78605e-319,1.1745686e-316,1.1745686e-316,542,15859,18330,4885769,13112,15859,Sox10_Unc5b,9.65228563955043,9.396446096907969,9.109487664186856
 ```
 
+---
+
 ## Note
 
-Confirm that 
+Confirm that all required dependencies are installed before running SCRIN.
+
+---
 
 ## References
+
+(Add references here if applicable)

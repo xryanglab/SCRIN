@@ -262,11 +262,11 @@ def hyper_test(tuple_proc, gene_num_dict, pixel_num_slice_all, min_gene_number, 
 
 def hyper_test_glb_base(opt):
     # parser = argparse.ArgumentParser()
-    # parser.add_argument("--detection_method", type=str, choices=['Radius', 'Nine_grid'],
-    #                     default='Radius', help="Method for neighbor detection, can be 'Radius' or 'Nine_grid'")
+    # parser.add_argument("--detection_method", type=str, choices=['radius', 'nine_grid'],
+    #                     default='radius', help="Method for neighbor detection, can be 'radius' or 'nine_grid'")
     # parser.add_argument("--r_check", type=float, default=None, help="radius of checking")
     # parser.add_argument("--grid_check", type=int, default=None,
-    #                     help="grid size for Nine_grid detection method, default is 1")
+    #                     help="grid size for nine_grid detection method, default is 1")
     # parser.add_argument("--column_name", type=str, default="x,y,z,geneID,cell",
     #                     help="column name used in data")
     # parser.add_argument("--min_gene_number", type=int, default=5,
@@ -302,13 +302,13 @@ def hyper_test_glb_base(opt):
         print("--------------------")
 
         # Check the options of detection method
-        if opt.detection_method == 'Radius':
-            if opt.r_check is None:
-                raise ValueError("Detection method 'Radius' requires --r_check to be set.")
-
-        if opt.detection_method == 'Nine_grid':
-            if opt.grid_check is None:
-                raise ValueError("Detection method 'Nine_grid' requires --grid_check to be set.")
+        # if opt.detection_method == 'radius':
+        #     if opt.r_check is None:
+        #         raise ValueError("Detection method 'radius' requires --r_check to be set.")
+        #
+        # if opt.detection_method == 'nine_grid':
+        #     if opt.grid_check is None:
+        #         raise ValueError("Detection method 'nine_grid' requires --grid_check to be set.")
 
         column_names = opt.column_name.split(',')
 
@@ -360,7 +360,7 @@ def hyper_test_glb_base(opt):
         df_flt = None
 
         # If nine_grid detection method is used, drop duplicate rows
-        if opt.detection_method == 'Nine_grid':
+        if opt.detection_method == 'nine_grid':
             df_flt_region = df_flt_region.drop_duplicates(subset=['geneID', 'x', 'y', 'z'])
 
         # Calculate the number of unique genes in DataFrame
@@ -368,7 +368,7 @@ def hyper_test_glb_base(opt):
         print("len of gene_num_dict: ", len(gene_num_dict))
 
         # Calculate the total number of pixels in the slice
-        if opt.detection_method == 'Nine_grid':
+        if opt.detection_method == 'nine_grid':
             # For nine_grid, pixel_num_slice_all is the number of unique (x, y, z) coordinates
             pixel_num_slice_all = len(df_flt_region[['x', 'y', 'z']].drop_duplicates())
         else:
@@ -394,12 +394,12 @@ def hyper_test_glb_base(opt):
     min_gene_number_local = opt.min_neighbor_number
     expression_level_local = opt.expression_level
 
-    if opt.detection_method == 'Nine_grid':
+    if opt.detection_method == 'nine_grid':
         region_function_cell = region_function_cell_nine_grid
-        print("Using Nine_grid detection method.")
+        print("Using nine_grid detection method.")
     else:
         region_function_cell = region_function_cell_radius
-        print("Using Radius detection method.")
+        print("Using radius detection method.")
 
     # Task 1: Detect neighbors in each cell
     partial_func = partial(region_function_cell, r_check=opt.r_check)

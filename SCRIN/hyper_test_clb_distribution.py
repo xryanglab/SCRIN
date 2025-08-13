@@ -270,10 +270,10 @@ def distribute_tasks_dynamic_region(comm, rank, size, tasks, task_processor, tas
             print(f"{task_tag} processing: Task {task_completed} completed, {len(tasks) - task_completed} remaining.")
 
             if task_index < len(tasks):
-                time_send_start = time.time()
+                # time_send_start = time.time()
                 robust_send(tasks[task_index], dest=status.source, tag=0, comm=comm, rank=rank, max_retries=10, retry_interval=60)
-                time_send_end = time.time()
-                print(f"[Rank {rank}] Task {task_index} sent to worker {status.source} in {time_send_end - time_send_start:.4f} seconds.")
+                # time_send_end = time.time()
+                # print(f"[Rank {rank}] Task {task_index} sent to worker {status.source} in {time_send_end - time_send_start:.4f} seconds.")
                 task_index += 1
                 active_workers += 1
             else:
@@ -331,7 +331,7 @@ def distribute_tasks_dynamic_region(comm, rank, size, tasks, task_processor, tas
             if comm.iprobe(source=0, tag=0):
                 task = comm.recv(source=0, tag=0)
                 if task is None:
-                    print(f"Rank {rank} received None from root rank, no more tasks.")
+                    # print(f"Rank {rank} received None from root rank, no more tasks.")
                     task_finished = True
             else:
                 task = None
@@ -550,7 +550,7 @@ def distribute_tasks_dynamic_multi_asyn(comm, rank, size, tasks, task_processor,
             if comm.iprobe(source=0, tag=700):
                 task = comm.recv(source=0, tag=700)
                 if task is None:
-                    print(f"Rank {rank} received None from root rank, no more tasks.")
+                    # print(f"Rank {rank} received None from root rank, no more tasks.")
                     task_finished = True
             else:
                 task = None
@@ -875,12 +875,12 @@ def update_local_matrix(matrix, local_update_seqs_list, gene2idx, local_gene2idx
             matrix[idx1, idx2, 4] += seq[5]  # gene_A
 
 
-def merge_distribution_dicts_from_file(distribution_file_path):
+def merge_distribution_dicts_from_file(intermediate_dir):
     """
     Merge multiple distribution dictionaries from joblib files into a single dictionary.
     """
     merged_distribution_dict = {}
-    for file in distribution_file_path:
+    for file in intermediate_dir:
         top_data = joblib.load(file)
         for gene_id, gene_around_distribution_dict in top_data.items():
             gene_level = merged_distribution_dict.setdefault(gene_id, {})
@@ -1009,10 +1009,10 @@ def shape_correct(df_result, opt):
 
 def hyper_test_clb_distribution(opt):
     # parser = argparse.ArgumentParser()
-    # parser.add_argument("--detection_method", type=str, choices=['Radius', 'Nine_grid'],
-    #                     default='Radius', help="Method for neighbor detection, can be 'Radius' or 'Nine_grid'")
+    # parser.add_argument("--detection_method", type=str, choices=['radius', 'nine_grid'],
+    #                     default='radius', help="Method for neighbor detection, can be 'radius' or 'nine_grid'")
     # parser.add_argument("--r_check", type=float, default=None, help="radius of checking")
-    # parser.add_argument("--grid_check", type=int, default=None, help="grid size for Nine_grid detection method, default is 1")
+    # parser.add_argument("--grid_check", type=int, default=None, help="grid size for nine_grid detection method, default is 1")
     # parser.add_argument("--r_dist", type=float, default=None, help="if not None, enable co-localization distribution saving")
     # parser.add_argument("--around_count_threshold", type=int, default=100,
     #                     help="threshold for the number of points around a gene to consider it for distribution analysis")
@@ -1027,7 +1027,7 @@ def hyper_test_clb_distribution(opt):
     #                     help="filter threshold for qvalue_BH in post processing")
     # parser.add_argument("--distribution_save_interval", type=int, default=10,
     #                     help="interval for saving distribution data to file")
-    # parser.add_argument("--distribution_file_path", type=str, default=None,
+    # parser.add_argument("--intermediate_dir", type=str, default=None,
     #                     help="File path to save co-localization distribution data")
     # parser.add_argument("--pair_keep", type=str, default='last', help="keep method for pair post processing, can be 'first' or 'last'")
     # parser.add_argument("--data_path", type=str,
@@ -1053,37 +1053,38 @@ def hyper_test_clb_distribution(opt):
         print("--------------------")
 
         # Check the options of detection method
-        if opt.detection_method == 'Radius':
-            if opt.r_check is None:
-                raise ValueError("Detection method 'Radius' requires --r_check to be set.")
-
-        if opt.detection_method == 'Nine_grid':
-            if opt.grid_check is None:
-                raise ValueError("Detection method 'Nine_grid' requires --grid_check to be set.")
+        # if opt.detection_method == 'radius':
+        #     if opt.r_check is None:
+        #         raise ValueError("Detection method 'radius' requires --r_check to be set.")
+        #
+        # if opt.detection_method == 'nine_grid':
+        #     if opt.grid_check is None:
+        #         raise ValueError("Detection method 'nine_grid' requires --grid_check to be set.")
 
         # Check the options of distribution
-        if opt.r_dist is not None:
-            if opt.distribution_file_path is None:
-                raise ValueError("If r_dist is set, distribution_file_path must be provided.")
-            if opt.detection_method == 'Nine_grid':
-                raise ValueError("Nine_grid detection method is not compatible with co-localization distribution analysis."
-                                 "Please use 'Radius' detection method or close co-localization distribution analysis. (--r_dist None)")
+        # if opt.r_dist is not None:
+        #     if opt.intermediate_dir is None:
+        #         raise ValueError("If r_dist is set, intermediate_dir must be provided.")
+        #     if opt.detection_method == 'nine_grid':
+        #         raise ValueError("Nine_grid detection method is not compatible with co-localization distribution analysis."
+        #                          "Please use 'radius' detection method or close co-localization distribution analysis.")
 
-        if opt.r_dist is not None:
-            if os.path.exists(opt.distribution_file_path):
-                print(f"Removing existing distribution file path: {opt.distribution_file_path}")
-                shutil.rmtree(opt.distribution_file_path)
-            os.makedirs(opt.distribution_file_path)
+        # if opt.r_dist is not None:
+        if opt.distribution_analysis:
+            if os.path.exists(opt.intermediate_dir):
+                print(f"Removing existing distribution file path: {opt.intermediate_dir}")
+                shutil.rmtree(opt.intermediate_dir)
+            os.makedirs(opt.intermediate_dir)
             # make n=size-1 directories, no root rank directory
             for i in range(1, size):
-                os.makedirs(os.path.join(opt.distribution_file_path, f"rank_{i}"))
+                os.makedirs(os.path.join(opt.intermediate_dir, f"rank_{i}"))
 
-            if os.path.exists(opt.distribution_file_path + '_gene_id_merge'):
-                print(f"Removing existing distribution file path for gene ID merge: {opt.distribution_file_path + '_gene_id_merge'}")
-                shutil.rmtree(opt.distribution_file_path + '_gene_id_merge')
-            os.makedirs(opt.distribution_file_path + '_gene_id_merge')
+            if os.path.exists(opt.intermediate_dir + '_gene_id_merge'):
+                print(f"Removing existing distribution file path for gene ID merge: {opt.intermediate_dir + '_gene_id_merge'}")
+                shutil.rmtree(opt.intermediate_dir + '_gene_id_merge')
+            os.makedirs(opt.intermediate_dir + '_gene_id_merge')
             for i in range(1, size):
-                os.makedirs(os.path.join(opt.distribution_file_path + '_gene_id_merge', f"rank_{i}"))
+                os.makedirs(os.path.join(opt.intermediate_dir + '_gene_id_merge', f"rank_{i}"))
 
         column_names = opt.column_name.split(',')
 
@@ -1180,8 +1181,9 @@ def hyper_test_clb_distribution(opt):
 
         # For distribution saving
         local_distribution_temp = []
-        if opt.r_dist is not None and opt.distribution_file_path is not None:
-            local_save_path = os.path.join(opt.distribution_file_path, f"rank_{rank}")
+        # if opt.r_dist is not None and opt.intermediate_dir is not None:
+        if opt.distribution_analysis:
+            local_save_path = os.path.join(opt.intermediate_dir, f"rank_{rank}")
         else:
             local_save_path = None
 
@@ -1189,17 +1191,17 @@ def hyper_test_clb_distribution(opt):
     expression_level_local = opt.expression_level
 
     # Task 1: Detecting neighbors in each cell
-    if opt.r_dist is not None:
+    if opt.distribution_analysis:
         partial_func = partial(region_function_cell_multi_proc_distribution, r_check=opt.r_check, r_dist=opt.r_dist,
                                  distribution_save_interval=opt.distribution_save_interval,
                                local_distribution_temp=local_distribution_temp, local_save_path=local_save_path,
                                     gene_rank_id2rank=gene_rank_id2rank)
     else:
-        if opt.detection_method == 'Nine_grid':
+        if opt.detection_method == 'nine_grid':
             partial_func = partial(region_function_cell_multi_proc_nine_grid, r_check=opt.grid_check,
                                    gene_rank_id2rank=gene_rank_id2rank)
         else:
-            # Default to Radius method
+            # Default to radius method
             partial_func = partial(region_function_cell_multi_proc, r_check=opt.r_check, gene_rank_id2rank=gene_rank_id2rank)
 
     if rank == 0:
@@ -1210,7 +1212,8 @@ def hyper_test_clb_distribution(opt):
     comm.Barrier()
 
     # Clear local_distribution_temp which not meet the save condition
-    if opt.r_dist is not None and opt.distribution_file_path is not None:
+    # if opt.r_dist is not None and opt.intermediate_dir is not None:
+    if opt.distribution_analysis:
         if rank != 0 and len(local_distribution_temp) > 0:
             local_save_path_file_count = len(os.listdir(local_save_path))
             distribution_save_path = os.path.join(local_save_path, f"distribution_{local_save_path_file_count}.pkl")
@@ -1255,14 +1258,15 @@ def hyper_test_clb_distribution(opt):
     # Wait for all processes to finish the hypergeometric test
     comm.Barrier()
 
-    if opt.r_dist is not None and opt.distribution_file_path is not None:
+    # if opt.r_dist is not None and opt.intermediate_dir is not None:
+    if opt.distribution_analysis:
         # Task 3: Process distribution files
         partial_func3 = partial(distribution_file_proc, gene_rank_id2rank=gene_rank_id2rank)
         for i in range(1, size):
-            input_path = os.path.join(opt.distribution_file_path, f"rank_{i}")
+            input_path = os.path.join(opt.intermediate_dir, f"rank_{i}")
             distribution_file_list = os.listdir(input_path)
             distribution_file_list = [os.path.join(input_path, file) for file in distribution_file_list if file.endswith('.pkl')]
-            merge_output_path = opt.distribution_file_path + '_gene_id_merge'
+            merge_output_path = opt.intermediate_dir + '_gene_id_merge'
 
             if len(distribution_file_list) > 0:
                 if rank == 0:
@@ -1283,11 +1287,12 @@ def hyper_test_clb_distribution(opt):
     else:
         result_output_shape_list = None
 
-    if opt.r_dist is not None and opt.distribution_file_path is not None:
+    # if opt.r_dist is not None and opt.intermediate_dir is not None:
+    if opt.distribution_analysis:
         for i in range(1, size):
             if rank == 0:
                 print(f"Processing distribution data for rank {i}...")
-                merged_output_path = os.path.join((opt.distribution_file_path + "_gene_id_merge"), f"rank_{i}")
+                merged_output_path = os.path.join((opt.intermediate_dir + "_gene_id_merge"), f"rank_{i}")
                 pkl_list = os.listdir(merged_output_path)
 
                 while len(pkl_list) < (size - 1):
@@ -1323,9 +1328,12 @@ def hyper_test_clb_distribution(opt):
 
 
     if rank == 0:
-        result_output_shape_list = [item for sublist in result_output_shape_list for item in sublist if item is not None]
+        if opt.distribution_analysis:
+            result_output_shape_list = [item for sublist in result_output_shape_list for item in sublist if item is not None]
 
-        joblib.dump(gene_rank_dict, os.path.join(opt.save_path.replace('.csv', '_gene_rank_dict.pkl')))
+        # joblib.dump(gene_rank_dict, os.path.join(opt.save_path.replace('.csv', '_gene_rank_dict.pkl')))
+        if opt.distribution_analysis:
+            joblib.dump(gene_rank_dict, f"{opt.intermediate_dir}/gene_rank_dict.pkl")
 
         df_result = pd.concat(result_output)
         df_result = add_pair_column(df_result)
@@ -1333,7 +1341,7 @@ def hyper_test_clb_distribution(opt):
         df_result.to_csv(opt.save_path, index=False)
 
         if len(result_output_shape_list) == 0:
-            print("No distribution shape data. Around count threshold may be too high.")
+            # print("No distribution shape data. Around count threshold may be too high.")
             df_merge = df_result
         else:
             df_shape = pd.concat(result_output_shape_list)
@@ -1344,5 +1352,10 @@ def hyper_test_clb_distribution(opt):
 
         df_merge_pair_dedup, df_merge_pair_filter = test_result_df_filter(df_merge, filter_threshold=opt.filter_threshold,
                                                                 keep=opt.pair_keep)
-        df_merge_pair_filter.to_csv(opt.save_path.replace('.csv', '_shape_pair.csv'), index=False)
+
+        if opt.distribution_analysis:
+            save_path = opt.save_path.replace('.csv', f'_dedup_{opt.filter_threshold}_post_proc_shape.csv')
+        else:
+            save_path = opt.save_path.replace('.csv', f'_dedup_{opt.filter_threshold}_post_proc.csv')
+        df_merge_pair_filter.to_csv(save_path, index=False)
 

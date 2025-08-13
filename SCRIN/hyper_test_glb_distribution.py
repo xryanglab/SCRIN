@@ -115,7 +115,7 @@ def update_pkl_file(task_result_sub, gene_id_list_split, opt, task_tag, monitor_
     for i, gene_id_list in enumerate(gene_id_list_split):
         common_gene_id = list(set(gene_id_list) & set(merge_gene_id_list_num))
         if len(common_gene_id) != 0:
-            with open(f'{opt.intermediate_path}/Region/task_results{i}.pkl', 'rb') as f:
+            with open(f'{opt.intermediate_dir}/Region/task_results{i}.pkl', 'rb') as f:
                 gene_dict_pkl = pickle.load(f)
                 # Update intersection gene_ids
                 for gene_id in common_gene_id:
@@ -123,7 +123,7 @@ def update_pkl_file(task_result_sub, gene_id_list_split, opt, task_tag, monitor_
                     for sub_gene_id, sub_num in merge_results_num[gene_id][1].items():
                         gene_dict_pkl[gene_id][1][sub_gene_id] += sub_num
 
-                with open(f'{opt.intermediate_path}/Region/task_results{i}.pkl', 'wb') as f:
+                with open(f'{opt.intermediate_dir}/Region/task_results{i}.pkl', 'wb') as f:
                     pickle.dump(gene_dict_pkl, f)
         else:
             pass
@@ -134,20 +134,20 @@ def update_pkl_file(task_result_sub, gene_id_list_split, opt, task_tag, monitor_
         if not common_gene_id:
             continue
 
-        main_path = f'{opt.intermediate_path}/Distance/task_results{i}.pkl'
+        main_path = f'{opt.intermediate_dir}/Distance/task_results{i}.pkl'
         chunk_size = 100 * 1024 * 1024  # 100MB
 
         if os.path.getsize(main_path) > chunk_size:
             # Handle chunked files
-            extra_path = f'{opt.intermediate_path}/extra_im_file_index_dict.pkl'
+            extra_path = f'{opt.intermediate_dir}/extra_im_file_index_dict.pkl'
             with open(extra_path, 'rb') as f:
                 extra_dict = pickle.load(f)
 
-            current_chunk, size = get_current_chunk(i, extra_dict, opt.intermediate_path)
+            current_chunk, size = get_current_chunk(i, extra_dict, opt.intermediate_dir)
             if not current_chunk or size > chunk_size:
                 new_index = (extra_dict[i][-1] + 1) if extra_dict[i] else 1
                 extra_dict[i].append(new_index)
-                current_chunk = f'{opt.intermediate_path}/Distance/task_results{i}_extra{new_index}.pkl'
+                current_chunk = f'{opt.intermediate_dir}/Distance/task_results{i}_extra{new_index}.pkl'
 
                 with open(extra_path, 'wb') as f:
                     pickle.dump(extra_dict, f)
@@ -160,14 +160,14 @@ def update_pkl_file(task_result_sub, gene_id_list_split, opt, task_tag, monitor_
         monitor_list.pop(0)
 
 
-def get_current_chunk(i, extra_dict, intermediate_path):
+def get_current_chunk(i, extra_dict, intermediate_dir):
     """Get current chunk info and maintain index."""
     indices = extra_dict.get(i, [])
     if not indices:
         return None, 0  # No extra chunk
 
     latest_extra = indices[-1]
-    chunk_path = f"{intermediate_path}/Distance/task_results{i}_extra{latest_extra}.pkl"
+    chunk_path = f"{intermediate_dir}/Distance/task_results{i}_extra{latest_extra}.pkl"
     return chunk_path, os.path.getsize(chunk_path)
 
 
@@ -188,7 +188,7 @@ def update_chunk_file(file_path, gene_id_list, common_gene_id, merge_results_dis
     return os.path.getsize(file_path)
 
 
-def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_tag, save_split_size=100, intermediate_save=False, gene_id_list=None):
+def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_tag, intermediate_split=100, intermediate_save=False, gene_id_list=None):
     """
     Dynamically distribute tasks to processes and collect results.
     :param comm: MPI communicator.
@@ -198,7 +198,7 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_
     :param task_processor: Function to process a task.
     :param opt: Argument container.
     :param task_tag: Task label.
-    :param save_split_size: Split size for saving intermediate results.
+    :param intermediate_split: Split size for saving intermediate results.
     :param intermediate_save: Whether to save intermediate results.
     :param gene_id_list: List of gene IDs.
     :return: If rank 0, returns all results; else None.
@@ -216,20 +216,20 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_
 
         task_result_proc = 0
 
-        intermediate_size = len(tasks) // save_split_size
+        intermediate_size = len(tasks) // intermediate_split
         gene_id_list_split = None
 
         if gene_id_list is not None and task_tag == 'NeighborDetection':
-            if len(gene_id_list) < save_split_size:
-                save_split_size = len(gene_id_list)
-                intermediate_size = len(tasks) // save_split_size
-                gene_id_list_split = split_list_into_sublists(gene_id_list, save_split_size)
+            if len(gene_id_list) < intermediate_split:
+                intermediate_split = len(gene_id_list)
+                intermediate_size = len(tasks) // intermediate_split
+                gene_id_list_split = split_list_into_sublists(gene_id_list, intermediate_split)
             else:
-                gene_id_list_split = split_list_into_sublists(gene_id_list, save_split_size)
+                gene_id_list_split = split_list_into_sublists(gene_id_list, intermediate_split)
 
             # Create empty dicts for each split and save as pkl
             extra_im_file_index_dict = defaultdict(list)
-            with open(f'{opt.intermediate_path}/extra_im_file_index_dict.pkl', 'wb') as f:
+            with open(f'{opt.intermediate_dir}/extra_im_file_index_dict.pkl', 'wb') as f:
                 pickle.dump(extra_im_file_index_dict, f)
 
             for i, gene_id_list in enumerate(gene_id_list_split):
@@ -239,9 +239,9 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_
                     dict_pkl_num[gene_id] = [0, defaultdict(int)]
                     dict_pkl_distance[gene_id] = defaultdict(list)
 
-                with open(f'{opt.intermediate_path}/Region/task_results{i}.pkl', 'wb') as f:
+                with open(f'{opt.intermediate_dir}/Region/task_results{i}.pkl', 'wb') as f:
                     pickle.dump(dict_pkl_num, f)
-                with open(f'{opt.intermediate_path}/Distance/task_results{i}.pkl', 'wb') as f:
+                with open(f'{opt.intermediate_dir}/Distance/task_results{i}.pkl', 'wb') as f:
                     pickle.dump(dict_pkl_distance, f)
 
         # Initial task distribution
@@ -514,8 +514,8 @@ def split_dictionary(input_dict, num_splits):
 
 def hyper_test_glb_distribution(opt):
     # parser = argparse.ArgumentParser()
-    # # parser.add_argument("--detection_method", type=str, choices=['Radius', 'Nine_grid'],
-    # #                     default='Radius', help="Method for neighbor detection, can be 'Radius' or 'Nine_grid'")
+    # # parser.add_argument("--detection_method", type=str, choices=['radius', 'nine_grid'],
+    # #                     default='radius', help="Method for neighbor detection, can be 'radius' or 'nine_grid'")
     # parser.add_argument("--r_check", type=float, default=0.5, help="radius of checking")
     # parser.add_argument("--r_dist", type=float, default=1.0, help="radius of distribution")
     # parser.add_argument("--around_count_threshold", type=int, default=100, help="around count threshold")
@@ -539,10 +539,10 @@ def hyper_test_glb_distribution(opt):
     # parser.add_argument("--molecule_distribution_id_path", type=str,
     #                     default="/data2/yangxr009/ST_STA_stereo/hyperTest_re/E16.5_E1S3_WholeBrain_GEM_CellBin_molecule_distribution.pkl",
     #                     help="path of molecule distribution saving")
-    # parser.add_argument("--intermediate_path", type=str,
+    # parser.add_argument("--intermediate_dir", type=str,
     #                     default="/data2/yangxr009/ST_STA_stereo/hyperTest_re/E16.5_E1S3_WholeBrain_GEM_CellBin_hyper_test_intermediate",
     #                     help="path of intermediate result saving")
-    # parser.add_argument("--save_split_size", type=int, default=100, help="interval of intermediate result saving")
+    # parser.add_argument("--intermediate_split", type=int, default=100, help="interval of intermediate result saving")
     # parser.add_argument("--num_nodes", type=int, default=6, help="Number of nodes")
     # parser.add_argument("--cores_per_node", type=int, default=16, help="Number of cores per node")
     # opt = parser.parse_args()
@@ -560,18 +560,18 @@ def hyper_test_glb_distribution(opt):
         print("--------------------")
 
         # Remove existing folders and their contents
-        shutil.rmtree(f'{opt.intermediate_path}/Region', ignore_errors=True)
-        shutil.rmtree(f'{opt.intermediate_path}/Distance', ignore_errors=True)
-        shutil.rmtree(f'{opt.intermediate_path}/HyperTest', ignore_errors=True)
-        shutil.rmtree(f'{opt.intermediate_path}/DistanceShape', ignore_errors=True)
-        shutil.rmtree(f'{opt.intermediate_path}/Distance_split', ignore_errors=True)
+        shutil.rmtree(f'{opt.intermediate_dir}/Region', ignore_errors=True)
+        shutil.rmtree(f'{opt.intermediate_dir}/Distance', ignore_errors=True)
+        shutil.rmtree(f'{opt.intermediate_dir}/HyperTest', ignore_errors=True)
+        shutil.rmtree(f'{opt.intermediate_dir}/DistanceShape', ignore_errors=True)
+        shutil.rmtree(f'{opt.intermediate_dir}/Distance_split', ignore_errors=True)
 
         # Create folders
-        os.makedirs(f'{opt.intermediate_path}/Region')
-        os.makedirs(f'{opt.intermediate_path}/Distance')
-        os.makedirs(f'{opt.intermediate_path}/HyperTest')
-        os.makedirs(f'{opt.intermediate_path}/DistanceShape')
-        os.makedirs(f'{opt.intermediate_path}/Distance_split')
+        os.makedirs(f'{opt.intermediate_dir}/Region')
+        os.makedirs(f'{opt.intermediate_dir}/Distance')
+        os.makedirs(f'{opt.intermediate_dir}/HyperTest')
+        os.makedirs(f'{opt.intermediate_dir}/DistanceShape')
+        os.makedirs(f'{opt.intermediate_dir}/Distance_split')
 
     if rank == 0:
         column_names = opt.column_name.split(',')
@@ -631,7 +631,7 @@ def hyper_test_glb_distribution(opt):
         gene_expression_num.set_index('geneName', inplace=True)
 
         # Split the sorted genes into sublists
-        num_chunks = opt.save_split_size
+        num_chunks = opt.intermediate_split
         chunks = [[] for _ in range(num_chunks)]
         # Distribute genes evenly across chunks
         for idx, gene in enumerate(sorted_genes):
@@ -672,27 +672,27 @@ def hyper_test_glb_distribution(opt):
     partial_func = partial(region_function_cell, r_check=opt.r_check, r_dist=opt.r_dist)
 
     if rank == 0:
-        dict_around_list = distribute_tasks_dynamic(comm, rank, size, cell_group_list, partial_func, opt, 'NeighborDetection', save_split_size=opt.save_split_size, intermediate_save=True, gene_id_list=gene_id_list)
+        dict_around_list = distribute_tasks_dynamic(comm, rank, size, cell_group_list, partial_func, opt, 'NeighborDetection', intermediate_split=opt.intermediate_split, intermediate_save=True, gene_id_list=gene_id_list)
     else:
-        distribute_tasks_dynamic(comm, rank, size, cell_group_list, partial_func, opt, 'NeighborDetection', save_split_size=opt.save_split_size, intermediate_save=True, gene_id_list=gene_id_list)
+        distribute_tasks_dynamic(comm, rank, size, cell_group_list, partial_func, opt, 'NeighborDetection', intermediate_split=opt.intermediate_split, intermediate_save=True, gene_id_list=gene_id_list)
         dict_around_list = None
 
     comm.Barrier()
 
     cell_group_list = None
 
-    around_file_list = [f for f in os.listdir(f'{opt.intermediate_path}/Region') if f.startswith('task_results')]
+    around_file_list = [f for f in os.listdir(f'{opt.intermediate_dir}/Region') if f.startswith('task_results')]
     around_file_list.sort()
-    distance_file_list = [f for f in os.listdir(f'{opt.intermediate_path}/Distance') if f.startswith('task_results')]
+    distance_file_list = [f for f in os.listdir(f'{opt.intermediate_dir}/Distance') if f.startswith('task_results')]
     distance_file_list.sort()
 
     if rank == 0:
         # Merge results from all processes
         print("Processing extra distance files...")
-        distance_inter_new_path = f'{opt.intermediate_path}/Distance_split'
+        distance_inter_new_path = f'{opt.intermediate_dir}/Distance_split'
         os.makedirs(distance_inter_new_path, exist_ok=True)
-        end_index = opt.save_split_size
-        for i_ex in range(opt.save_split_size):
+        end_index = opt.intermediate_split
+        for i_ex in range(opt.intermediate_split):
             im_temps = []
             pre_name = f'task_results{i_ex}_extra'
             for file in distance_file_list:
@@ -702,18 +702,18 @@ def hyper_test_glb_distribution(opt):
             if len(im_temps) > 0:
                 re_ori = f'task_results{i_ex}.pkl'
                 print(f"Cancatenating {re_ori}...")
-                with open(f'{opt.intermediate_path}/Distance/{re_ori}', 'rb') as f:
+                with open(f'{opt.intermediate_dir}/Distance/{re_ori}', 'rb') as f:
                     dict_pkl_distance = pickle.load(f)
 
                 for file in im_temps:
-                    with open(f'{opt.intermediate_path}/Distance/{file}', 'rb') as f:
+                    with open(f'{opt.intermediate_dir}/Distance/{file}', 'rb') as f:
                         dict_pkl_distance_extra = pickle.load(f)
                     for gene_id, dist_dict in dict_pkl_distance_extra.items():
                         for gene_id_around, dist_list in dist_dict.items():
                             dict_pkl_distance[gene_id][gene_id_around].extend(dist_list)
 
                     # Remove the extra file after concatenation
-                    # os.remove(f'{opt.intermediate_path}/Distance/{file}')
+                    # os.remove(f'{opt.intermediate_dir}/Distance/{file}')
 
                 with open(f'{distance_inter_new_path}/{re_ori}', 'wb') as f:
                     pickle.dump(dict_pkl_distance, f)
@@ -737,7 +737,7 @@ def hyper_test_glb_distribution(opt):
                                 pickle.dump(dict_pkl_distance_sub, f)
                             end_index += 1
             else:
-                shutil.copy(f'{opt.intermediate_path}/Distance/task_results{i_ex}.pkl', f'{distance_inter_new_path}/task_results{i_ex}.pkl')
+                shutil.copy(f'{opt.intermediate_dir}/Distance/task_results{i_ex}.pkl', f'{distance_inter_new_path}/task_results{i_ex}.pkl')
 
         # Memory cleanup
         dict_pkl_distance = None
@@ -747,13 +747,13 @@ def hyper_test_glb_distribution(opt):
     comm.Barrier()
 
     # Update distance_file_list
-    distance_file_list = [f for f in os.listdir(f'{opt.intermediate_path}/Distance_split') if f.startswith('task_results')]
+    distance_file_list = [f for f in os.listdir(f'{opt.intermediate_dir}/Distance_split') if f.startswith('task_results')]
     distance_file_list.sort()
 
     for i, file in enumerate(around_file_list):
         if rank == 0:
             print(f"Hyper test: Processing intermediate file {file}...")
-            with open(f'{opt.intermediate_path}/Region/{file}', 'rb') as f:
+            with open(f'{opt.intermediate_dir}/Region/{file}', 'rb') as f:
                 dict_around_list = pickle.load(f)
             tuple_around = [(gene_id, pixel_num_around, gene_around_dict) for gene_id, (pixel_num_around, gene_around_dict) in dict_around_list.items()]
             print("len of tuple_around: ", len(tuple_around))
@@ -779,7 +779,7 @@ def hyper_test_glb_distribution(opt):
             if not any(isinstance(_, pd.DataFrame) for _ in result_output):
                 continue
             df_result = pd.concat(result_output)
-            df_result.to_csv(f'{opt.intermediate_path}/HyperTest/HyperTest_{i}.csv', index=False)
+            df_result.to_csv(f'{opt.intermediate_dir}/HyperTest/HyperTest_{i}.csv', index=False)
             result_output = None
 
     if rank == 0:
@@ -791,7 +791,7 @@ def hyper_test_glb_distribution(opt):
         if rank == 0:
             print(f"Distance Shape: Processing intermediate file {file}...")
             task_id = int(file.replace('task_results', '').replace('.pkl', ''))
-            with open(f'{opt.intermediate_path}/Distance_split/{file}', 'rb') as f:
+            with open(f'{opt.intermediate_dir}/Distance_split/{file}', 'rb') as f:
                 dict_distance_list = pickle.load(f)
             tuple_dist = [(gene_id, gene_distance_dict) for gene_id, gene_distance_dict in dict_distance_list.items()]
             print("len of tuple_dist: ", len(tuple_dist))
@@ -820,19 +820,19 @@ def hyper_test_glb_distribution(opt):
             
             df_result = shape_correct(df_result, opt)
             
-            df_result.to_csv(f'{opt.intermediate_path}/DistanceShape/DistanceShape_{i}.csv', index=False)
+            df_result.to_csv(f'{opt.intermediate_dir}/DistanceShape/DistanceShape_{i}.csv', index=False)
             result_output = None
 
     if rank == 0:
         # Save the task_gene_dict to a pickle file
-        with open(f'{opt.molecule_distribution_id_path}', 'wb') as f:
+        with open(f'{opt.intermediate_dir}/molecule_distribution_ID.pkl', 'wb') as f:
             pickle.dump(task_gene_dict, f)
 
         print("Merging local results...")
         # Combine results from all intermediate files
-        hyper_file_list = [f"{opt.intermediate_path}/HyperTest/{f}" for f in os.listdir(f'{opt.intermediate_path}/HyperTest') if f.startswith('HyperTest')]
+        hyper_file_list = [f"{opt.intermediate_dir}/HyperTest/{f}" for f in os.listdir(f'{opt.intermediate_dir}/HyperTest') if f.startswith('HyperTest')]
         hyper_file_list.sort()
-        distance_shape_file_list = [f"{opt.intermediate_path}/DistanceShape/{f}" for f in os.listdir(f'{opt.intermediate_path}/DistanceShape') if f.startswith('DistanceShape')]
+        distance_shape_file_list = [f"{opt.intermediate_dir}/DistanceShape/{f}" for f in os.listdir(f'{opt.intermediate_dir}/DistanceShape') if f.startswith('DistanceShape')]
         distance_shape_file_list.sort()
 
         if len(hyper_file_list) != 0:

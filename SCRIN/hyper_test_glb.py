@@ -88,21 +88,21 @@ def update_pkl_file(task_result_sub, gene_id_list_split, opt, task_tag, monitor_
     for i, gene_id_list in enumerate(gene_id_list_split):
         common_gene_id = list(set(gene_id_list) & set(merge_gene_id_list))
         if len(common_gene_id) != 0:
-            with open(f'{opt.intermediate_path}/{task_tag}/task_results{i}.pkl', 'rb') as f:
+            with open(f'{opt.intermediate_dir}/{task_tag}/task_results{i}.pkl', 'rb') as f:
                 gene_dict_pkl = pickle.load(f)
                 # Update intersection gene_ids
                 for gene_id in common_gene_id:
                     gene_dict_pkl[gene_id][0] += merge_results[gene_id][0]
                     for sub_gene_id, sub_num in merge_results[gene_id][1].items():
                         gene_dict_pkl[gene_id][1][sub_gene_id] += sub_num
-                with open(f'{opt.intermediate_path}/{task_tag}/task_results{i}.pkl', 'wb') as f:
+                with open(f'{opt.intermediate_dir}/{task_tag}/task_results{i}.pkl', 'wb') as f:
                     pickle.dump(gene_dict_pkl, f)
 
     if monitor_list is not None:
         monitor_list.pop(0)
 
 
-def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_tag, save_split_size=100, intermediate_save=False, gene_id_list=None):
+def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_tag, intermediate_split=100, intermediate_save=False, gene_id_list=None):
     """
     Dynamically distribute tasks to processes and collect results.
     :param comm: MPI communicator.
@@ -112,7 +112,7 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_
     :param task_processor: Function to process a task.
     :param opt: Argument container.
     :param task_tag: Task label.
-    :param save_split_size: Split size for saving intermediate results.
+    :param intermediate_split: Split size for saving intermediate results.
     :param intermediate_save: Whether to save intermediate results.
     :param gene_id_list: List of gene IDs.
     :return: If rank 0, returns all results; else None.
@@ -130,23 +130,23 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_
 
         task_result_proc = 0
 
-        intermediate_size = len(tasks) // save_split_size
+        intermediate_size = len(tasks) // intermediate_split
         gene_id_list_split = None
 
         if gene_id_list is not None:
-            if len(gene_id_list) < save_split_size:
-                save_split_size = len(gene_id_list)
-                intermediate_size = len(tasks) // save_split_size
-                gene_id_list_split = split_list_into_sublists(gene_id_list, save_split_size)
+            if len(gene_id_list) < intermediate_split:
+                intermediate_split = len(gene_id_list)
+                intermediate_size = len(tasks) // intermediate_split
+                gene_id_list_split = split_list_into_sublists(gene_id_list, intermediate_split)
             else:
-                gene_id_list_split = split_list_into_sublists(gene_id_list, save_split_size)
+                gene_id_list_split = split_list_into_sublists(gene_id_list, intermediate_split)
 
             # Create empty dictionaries for each split and save as pkl
             for i, gene_id_list in enumerate(gene_id_list_split):
                 dict_pkl = {}
                 for gene_id in gene_id_list:
                     dict_pkl[gene_id] = [0, defaultdict(int)]
-                with open(f'{opt.intermediate_path}/{task_tag}/task_results{i}.pkl', 'wb') as f:
+                with open(f'{opt.intermediate_dir}/{task_tag}/task_results{i}.pkl', 'wb') as f:
                     pickle.dump(dict_pkl, f)
 
         # Initial task distribution
@@ -370,11 +370,11 @@ def result_combine(file_list, save_path):
 
 def hyper_test_glb(opt):
     # parser = argparse.ArgumentParser()
-    # parser.add_argument("--detection_method", type=str, choices=['Radius', 'Nine_grid'],
-    #                     default='Radius', help="Method for neighbor detection, can be 'Radius' or 'Nine_grid'")
+    # parser.add_argument("--detection_method", type=str, choices=['radius', 'nine_grid'],
+    #                     default='radius', help="Method for neighbor detection, can be 'radius' or 'nine_grid'")
     # parser.add_argument("--r_check", type=float, default=None, help="radius of checking")
     # parser.add_argument("--grid_check", type=int, default=None,
-    #                     help="grid size for Nine_grid detection method, default is 1")
+    #                     help="grid size for nine_grid detection method, default is 1")
     # parser.add_argument("--column_name", type=str, default="x,y,z,geneID,cell", help="column name used in data")
     # parser.add_argument("--min_gene_number", type=int, default=5,
     #                     help="minimum number of transcripts for a gene to be considered")
@@ -392,10 +392,10 @@ def hyper_test_glb(opt):
     # parser.add_argument("--save_path", type=str,
     #                     default="/data2/yangxr009/ST_STA_stereo/hyperTest_re/E16.5_E1S3_WholeBrain_GEM_CellBin_hyper_test.csv",
     #                     help="path of result saving")
-    # parser.add_argument("--intermediate_path", type=str,
+    # parser.add_argument("--intermediate_dir", type=str,
     #                     default="/data2/yangxr009/ST_STA_stereo/hyperTest_re/E16.5_E1S3_WholeBrain_GEM_CellBin_hyper_test_intermediate",
     #                     help="path of intermediate result saving")
-    # parser.add_argument("--save_split_size", type=int, default=100, help="interval of intermediate result saving")
+    # parser.add_argument("--intermediate_split", type=int, default=100, help="interval of intermediate result saving")
     # parser.add_argument("--num_nodes", type=int, default=6, help="Number of nodes")
     # parser.add_argument("--cores_per_node", type=int, default=16, help="Number of cores per node")
     # opt = parser.parse_args()
@@ -413,21 +413,21 @@ def hyper_test_glb(opt):
         print("--------------------")
 
         # Check the options of detection method
-        if opt.detection_method == 'Radius':
-            if opt.r_check is None:
-                raise ValueError("Detection method 'Radius' requires --r_check to be set.")
-
-        if opt.detection_method == 'Nine_grid':
-            if opt.grid_check is None:
-                raise ValueError("Detection method 'Nine_grid' requires --grid_check to be set.")
+        # if opt.detection_method == 'radius':
+        #     if opt.r_check is None:
+        #         raise ValueError("Detection method 'radius' requires --r_check to be set.")
+        #
+        # if opt.detection_method == 'nine_grid':
+        #     if opt.grid_check is None:
+        #         raise ValueError("Detection method 'nine_grid' requires --grid_check to be set.")
 
         # Remove existing folders and their contents
-        shutil.rmtree(f'{opt.intermediate_path}/Region', ignore_errors=True)
-        shutil.rmtree(f'{opt.intermediate_path}/HyperTest', ignore_errors=True)
+        shutil.rmtree(f'{opt.intermediate_dir}/Region', ignore_errors=True)
+        shutil.rmtree(f'{opt.intermediate_dir}/HyperTest', ignore_errors=True)
 
         # Create folders
-        os.makedirs(f'{opt.intermediate_path}/Region')
-        os.makedirs(f'{opt.intermediate_path}/HyperTest')
+        os.makedirs(f'{opt.intermediate_dir}/Region')
+        os.makedirs(f'{opt.intermediate_dir}/HyperTest')
 
     if rank == 0:
         column_names = opt.column_name.split(',')
@@ -480,7 +480,7 @@ def hyper_test_glb(opt):
         df_flt = None
 
         # If nine_grid detection method is used, drop duplicate rows
-        if opt.detection_method == 'Nine_grid':
+        if opt.detection_method == 'nine_grid':
             df_flt_region = df_flt_region.drop_duplicates(subset=['geneID', 'x', 'y', 'z'])
 
         # Get unique gene IDs from the filtered DataFrame
@@ -491,7 +491,7 @@ def hyper_test_glb(opt):
         print("len of gene_num_dict: ", len(gene_num_dict))
 
         # Calculate the total number of pixels in the slice
-        if opt.detection_method == 'Nine_grid':
+        if opt.detection_method == 'nine_grid':
             # For nine_grid, pixel_num_slice_all is the number of unique (x, y, z) coordinates
             pixel_num_slice_all = len(df_flt_region[['x', 'y', 'z']].drop_duplicates())
         else:
@@ -518,31 +518,31 @@ def hyper_test_glb(opt):
     min_gene_number_local = opt.min_neighbor_number
     expression_level_local = opt.expression_level
 
-    if opt.detection_method == 'Nine_grid':
+    if opt.detection_method == 'nine_grid':
         region_function_cell = region_function_cell_nine_grid
-        print("Using Nine_grid detection method.")
+        print("Using nine_grid detection method.")
     else:
         region_function_cell = region_function_cell_radius
-        print("Using Radius detection method.")
+        print("Using radius detection method.")
 
     # Task 1: Detect neighbors in each cell
     partial_func = partial(region_function_cell, r_check=opt.r_check)
 
     if rank == 0:
-        dict_around_list = distribute_tasks_dynamic(comm, rank, size, cell_group_list, partial_func, opt, 'NeighborDetection', save_split_size=opt.save_split_size, intermediate_save=True, gene_id_list=gene_id_list)
+        dict_around_list = distribute_tasks_dynamic(comm, rank, size, cell_group_list, partial_func, opt, 'NeighborDetection', intermediate_split=opt.intermediate_split, intermediate_save=True, gene_id_list=gene_id_list)
     else:
-        distribute_tasks_dynamic(comm, rank, size, cell_group_list, partial_func, opt, 'NeighborDetection', save_split_size=opt.save_split_size, intermediate_save=True, gene_id_list=gene_id_list)
+        distribute_tasks_dynamic(comm, rank, size, cell_group_list, partial_func, opt, 'NeighborDetection', intermediate_split=opt.intermediate_split, intermediate_save=True, gene_id_list=gene_id_list)
         dict_around_list = None
 
     comm.Barrier()
 
-    around_file_list = [f for f in os.listdir(f'{opt.intermediate_path}/Region') if f.startswith('task_results')]
+    around_file_list = [f for f in os.listdir(f'{opt.intermediate_dir}/Region') if f.startswith('task_results')]
     around_file_list.sort()
 
     for i, file in enumerate(around_file_list):
         if rank == 0:
             print(f"Hyper test: Processing intermediate file {file}...")
-            with open(f'{opt.intermediate_path}/Region/{file}', 'rb') as f:
+            with open(f'{opt.intermediate_dir}/Region/{file}', 'rb') as f:
                 dict_around_list = pickle.load(f)
             tuple_around = [(gene_id, pixel_num_around, gene_around_dict) for gene_id, (pixel_num_around, gene_around_dict) in dict_around_list.items()]
             print("len of tuple_around: ", len(tuple_around))
@@ -565,12 +565,12 @@ def hyper_test_glb(opt):
 
         if rank == 0:
             df_result = pd.concat(result_output)
-            df_result.to_csv(f'{opt.intermediate_path}/HyperTest/HyperTest_{i}.csv', index=False)
+            df_result.to_csv(f'{opt.intermediate_dir}/HyperTest/HyperTest_{i}.csv', index=False)
 
     if rank == 0:
         print("Merging local results...")
         # Merge all local results into a single CSV file
-        file_list = [f"{opt.intermediate_path}/HyperTest/{f}" for f in os.listdir(f'{opt.intermediate_path}/HyperTest') if f.startswith('HyperTest')]
+        file_list = [f"{opt.intermediate_dir}/HyperTest/{f}" for f in os.listdir(f'{opt.intermediate_dir}/HyperTest') if f.startswith('HyperTest')]
         file_list.sort()
 
         if len(file_list) != 0:
