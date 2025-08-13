@@ -33,6 +33,14 @@ If you encounter issues, we recommend reverting to the specified versions.
 
 ## Installation
 
+We recommend using **Anaconda** to manage your environment and dependencies.
+First, create and activate a new environment:
+
+```bash
+conda create -n scrin_env python=3.9
+conda activate scrin_env
+```
+
 Before installing SCRIN, install the dependencies listed in `requirements.txt`:
 
 ```bash
