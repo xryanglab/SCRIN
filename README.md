@@ -2,8 +2,6 @@
 
 Systematic dissections of the subcellular RNA colocalization landscapes in high-resolution spatial transcriptomics.
 
----
-
 ## Requirements & Compatibility
 
 The following dependencies are required to run this project.  
@@ -33,8 +31,6 @@ If you encounter issues, we recommend reverting to the specified versions.
 - tools==1.0.2  
 - tqdm==4.67.1  
 
----
-
 ## Installation
 
 Before installing SCRIN, install the dependencies listed in `requirements.txt`:
@@ -57,21 +53,15 @@ cd SCRIN
 pip install .
 ```
 
----
-
 ## Usage
 
 ```bash
 python scrin.py --save_path /path/to/save
 ```
 
----
-
 ## Flags
 
 - **`--save_path`** : Path for saving the results.
-
----
 
 ## Output
 
@@ -91,13 +81,9 @@ Flt1,Cldn5,0.0,0.0,0.0,2066,46402,50865,4885769,41692,46402,Cldn5_Flt1,4.5745659
 Unc5b,Sox10,5.78605e-319,1.1745686e-316,1.1745686e-316,542,15859,18330,4885769,13112,15859,Sox10_Unc5b,9.65228563955043,9.396446096907969,9.109487664186856
 ```
 
----
-
 ## Note
 
 Confirm that all required dependencies are installed before running SCRIN.
-
----
 
 ## References
 
