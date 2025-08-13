@@ -16,7 +16,7 @@ If you encounter issues, we recommend reverting to the specified versions.
 
 **Tested Environment:**
 - Python 3.9
-- Linux (Ubuntu-based)
+- Linux
 
 **Required dependencies:**
 - mpi4py==4.1.0  
@@ -87,4 +87,7 @@ Confirm that all required dependencies are installed before running SCRIN.
 
 ## References
 
-(Add references here if applicable)
+(Add references here)
+
+## For any questions, please contact:
+Xuerui Yang (yangxuerui@tsinghua.edu.cn); Xu Chen (chenxu22@mails.tsinghua.edu.cn)
