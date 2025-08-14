@@ -21,11 +21,11 @@ If you encounter issues, we recommend reverting to the specified versions.
 
 ### System Dependencies
 
-  - **MPICH** (== 4.0.1): Required for parallel computing. SCRIN utilizes high-speed parallel processing to efficiently handle large-scale spatial transcriptomics data.
+  - **MPICH** (== 4.2.1): Required for parallel computing. SCRIN utilizes high-speed parallel processing to efficiently handle large-scale spatial transcriptomics data.
 
 ### Python Dependencies
 
-  - mpi4py==4.1.0
+  - mpi4py==3.1.5
   - msgpack==1.1.1
   - numpy==2.0.2
   - pandas==2.3.1
@@ -50,7 +50,7 @@ Please install MPICH using one of the following methods before proceeding.
 The easiest way to ensure compatibility is to let Conda install `mpi4py` and its required MPI implementation (MPICH) together.
 
 ```bash
-conda install -c conda-forge mpi4py=4.1.0 mpich=4.0.1
+conda install -c conda-forge mpi4py=3.1.5 mpich=4.2.1
 ```
 
 > **Note on Version Availability**:
@@ -68,7 +68,7 @@ For Debian-based systems like Ubuntu, you can use `apt`:
 
 ```bash
 sudo apt update
-sudo apt install mpich=4.0.1
+sudo apt install mpich=4.2.1
 ```
 
 #### Method 3: Install from Source
