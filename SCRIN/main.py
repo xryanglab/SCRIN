@@ -117,6 +117,12 @@ def main():
     func_key = (args.unsegmented, args.mode, args.background, args.distribution_analysis)
     function_run = func_map[func_key]
 
+    if function_run is None:
+        raise ValueError("Invalid combination of parameters. Please check your input arguments.")
+
+    # Run the selected function
+    function_run(args)
+
 
 if __name__ == '__main__':
     main()
