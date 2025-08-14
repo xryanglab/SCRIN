@@ -39,7 +39,16 @@ If you encounter issues, we recommend reverting to the specified versions.
 
 ## Installation
 
-### Step 1: Install MPICH
+### Step 1: Set up Python Environment
+
+We recommend using **Anaconda** to manage your environment. Create and activate a new environment:
+
+```bash
+conda create -n scrin_env python=3.9
+conda activate scrin_env
+```
+
+### Step 2: Install MPICH
 
 SCRIN leverages `mpi4py` for high-speed parallel computing to tackle the challenges of large-scale spatial transcriptomics data. This requires a functional MPI (Message Passing Interface) implementation on your system, such as MPICH.
 
@@ -75,15 +84,6 @@ sudo apt install mpich=4.2.1
 
 For advanced users or specific system configurations, you can compile and install MPICH from the official source. Please refer to the [official MPICH installation guide](https://www.mpich.org/documentation/guides/) for detailed instructions.
 
-### Step 2: Set up Python Environment
-
-We recommend using **Anaconda** to manage your environment. Create and activate a new environment:
-
-```bash
-conda create -n scrin_env python=3.9
-conda activate scrin_env
-```
-
 ### Step 3: Install Python Dependencies
 
 Before installing SCRIN, install the dependencies listed in `requirements.txt`:
@@ -115,10 +115,22 @@ pip install .
 ## Usage
 
 ```bash
-python scrin.py --save_path /path/to/save
+mpirun -n 16 SCRIN \
+	--detection_method "radius" \
+	--background "cooccurrence" \
+	--mode "fast" \
+	--data_path "Run1000_S1_Half_tx_file_cell_1000cells.csv" \
+	--save_path "halfbrain_1000cells_hyper_test_cb.csv" \
+	--column_name "x_global_px,y_global_px,z,target,cell" \
+	--r_check 4.16 \
+	--filter_threshold 0.00001 \
+	--min_gene_number 6 \
+	--min_neighbor_number 1 \
+	--expression_level 100 \
+	--intermediate_dir "halfbrain_1000cells_hyper_test_cb"
 ```
 
-## Flags
+## Command-line Options
 
 - **`--save_path`** : Path for saving the results.
 
