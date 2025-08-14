@@ -10,7 +10,7 @@ The versions listed have been tested thoroughly and confirmed to be compatible.
 In most cases, other versions also work, as the project relies mainly on stable and widely supported APIs.
 If you encounter issues, we recommend reverting to the specified versions.
 
-> **Note**
+> **Note**:
 > This project has been tested and is currently supported **only on Linux**.
 > Support for Windows and macOS may be added in the future, but compatibility is not guaranteed at this time.
 
@@ -53,7 +53,7 @@ The easiest way to ensure compatibility is to let Conda install `mpi4py` and its
 conda install -c conda-forge mpi4py=4.1.0 mpich=4.0.1
 ```
 
-> **Note on Version Availability**
+> **Note on Version Availability**:
 > If the command above fails because the specified versions cannot be found for your system, you can try installing without specifying the versions:
 >
 > ```bash
