@@ -4,42 +4,87 @@ Systematic dissections of the subcellular RNA colocalization landscapes in high-
 
 ## Requirements & Compatibility
 
-The following dependencies are required to run this project.  
-The versions listed have been tested thoroughly and confirmed to be compatible.  
+The following dependencies are required to run this project.
+The versions listed have been tested thoroughly and confirmed to be compatible.
 
-In most cases, newer versions may also work, as the project relies mainly on stable and widely supported APIs.  
+In most cases, other versions also work, as the project relies mainly on stable and widely supported APIs.
 If you encounter issues, we recommend reverting to the specified versions.
 
-> **Note**  
-> This project has been tested and is currently supported **only on Linux**.  
+> **Note**
+> This project has been tested and is currently supported **only on Linux**.
 > Support for Windows and macOS may be added in the future, but compatibility is not guaranteed at this time.
 
 **Tested Environment:**
-- Python 3.9
-- Linux
 
-**Required dependencies:**
-- mpi4py==4.1.0  
-- msgpack==1.1.1  
-- numpy==2.0.2  
-- pandas==2.3.1  
-- pyarrow==21.0.0  
-- rtree==1.4.0  
-- scikit-learn==1.6.1  
-- scipy==1.13.1  
-- statsmodels==0.14.5  
-- tools==1.0.2  
-- tqdm==4.67.1  
+  - Python 3.9
+  - Linux
+
+### System Dependencies
+
+  - **MPICH** (== 4.0.1): Required for parallel computing. SCRIN utilizes high-speed parallel processing to efficiently handle large-scale spatial transcriptomics data.
+
+### Python Dependencies
+
+  - mpi4py==4.1.0
+  - msgpack==1.1.1
+  - numpy==2.0.2
+  - pandas==2.3.1
+  - pyarrow==21.0.0
+  - rtree==1.4.0
+  - scikit-learn==1.6.1
+  - scipy==1.13.1
+  - statsmodels==0.14.5
+  - tools==1.0.2
+  - tqdm==4.67.1
 
 ## Installation
 
-We recommend using **Anaconda** to manage your environment and dependencies.
-First, create and activate a new environment:
+### Step 1: Install MPICH
+
+SCRIN leverages `mpi4py` for high-speed parallel computing to tackle the challenges of large-scale spatial transcriptomics data. This requires a functional MPI (Message Passing Interface) implementation on your system, such as MPICH.
+
+Please install MPICH using one of the following methods before proceeding.
+
+#### Method 1: Install via Conda
+
+The easiest way to ensure compatibility is to let Conda install `mpi4py` and its required MPI implementation (MPICH) together.
+
+```bash
+conda install -c conda-forge mpi4py=4.1.0 mpich=4.0.1
+```
+
+> **Note on Version Availability**
+> If the command above fails because the specified versions cannot be found for your system, you can try installing without specifying the versions:
+>
+> ```bash
+> conda install -c conda-forge mpi4py mpich
+> ```
+>
+> Please be aware that this will install the latest available packages, which have not been officially tested by us and may lead to unexpected behavior.
+
+#### Method 2: Install via System Package Manager
+
+For Debian-based systems like Ubuntu, you can use `apt`:
+
+```bash
+sudo apt update
+sudo apt install mpich=4.0.1
+```
+
+#### Method 3: Install from Source
+
+For advanced users or specific system configurations, you can compile and install MPICH from the official source. Please refer to the [official MPICH installation guide](https://www.mpich.org/documentation/guides/) for detailed instructions.
+
+### Step 2: Set up Python Environment
+
+We recommend using **Anaconda** to manage your environment. Create and activate a new environment:
 
 ```bash
 conda create -n scrin_env python=3.9
 conda activate scrin_env
 ```
+
+### Step 3: Install Python Dependencies
 
 Before installing SCRIN, install the dependencies listed in `requirements.txt`:
 
@@ -47,14 +92,20 @@ Before installing SCRIN, install the dependencies listed in `requirements.txt`:
 pip install -r requirements.txt
 ```
 
+> **Note**: If you did not use the Conda method to install MPICH in Step 1, `pip` will attempt to compile `mpi4py` using the system's MPI compiler (`mpicc`). Ensure your MPICH installation is correctly configured in your system's PATH.
+
+### Step 4: Install SCRIN
+
 Once dependencies are installed, SCRIN can be installed in **two ways**:
 
-### 1. Install from PyPI
+#### 1. Install from PyPI
+
 ```bash
 pip install scrin
 ```
 
-### 2. Install from local clone
+#### 2. Install from local clone
+
 ```bash
 git clone https://github.com/xryanglab/SCRIN
 cd SCRIN
