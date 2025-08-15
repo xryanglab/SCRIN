@@ -115,7 +115,7 @@ pip install .
 ## Usage
 
 ```bash
-mpirun -n 16 SCRIN \
+mpirun -n 16 scrin \
 	--detection_method "radius" \
 	--background "cooccurrence" \
 	--mode "fast" \
