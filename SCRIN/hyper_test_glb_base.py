@@ -12,7 +12,7 @@ from scipy.stats import hypergeom
 from statsmodels.stats.multitest import multipletests
 from functools import partial
 from collections import defaultdict
-from SCRIN.tools.result_proc import add_pair_column, test_result_df_filter, test_result_df_ratio_proc
+from scrin.tools.result_proc import add_pair_column, test_result_df_filter, test_result_df_ratio_proc
 
 
 def large_bcast(data, comm, rank, size, root=0):

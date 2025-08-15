@@ -1,9 +1,9 @@
 import argparse
-from SCRIN.hyper_test_glb_base import hyper_test_glb_base
-from SCRIN.hyper_test_glb import hyper_test_glb
-from SCRIN.hyper_test_glb_distribution import hyper_test_glb_distribution
-from SCRIN.hyper_test_glb_nocell import hyper_test_glb_nocell
-from SCRIN.hyper_test_clb_distribution import hyper_test_clb_distribution
+from scrin.hyper_test_glb_base import hyper_test_glb_base
+from scrin.hyper_test_glb import hyper_test_glb
+from scrin.hyper_test_glb_distribution import hyper_test_glb_distribution
+from scrin.hyper_test_glb_nocell import hyper_test_glb_nocell
+from scrin.hyper_test_clb_distribution import hyper_test_clb_distribution
 
 
 def main():

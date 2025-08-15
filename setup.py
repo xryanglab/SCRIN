@@ -3,7 +3,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='SCRIN',
+    name='scrin',
     version='1.0.0',
     packages=find_packages(),
     install_requires=[
@@ -21,7 +21,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'SCRIN = SCRIN.main:main',  # Register the main function of the SCRIN package
+            'scrin = scrin.main:main',  # Register the main function of the SCRIN package
         ],
     },
 )

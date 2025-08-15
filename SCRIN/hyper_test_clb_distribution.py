@@ -19,7 +19,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from threading import Event
-from SCRIN.tools.result_proc import add_pair_column, test_result_df_filter, test_result_df_ratio_proc
+from scrin.tools.result_proc import add_pair_column, test_result_df_filter, test_result_df_ratio_proc
 
 
 def split_list_into_sublists(input_list, num_sublists):
