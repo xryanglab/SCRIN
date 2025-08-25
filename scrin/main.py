@@ -15,7 +15,7 @@ def main():
     mode_group.add_argument("--background", type=str, choices=['all', 'cooccurrence'],
                         required=True, help="Background calculation method, all cell background or gene a/b co-occurrence cell background")
     mode_group.add_argument("--mode", type=str, choices=['robust', 'fast'],
-                        required=True, help="Method for neighbor detection, can be 'radius' or 'nine_grid'")
+                        required=True, help="Mode of operation, can be 'robust' or 'fast'")
 
     base_params_group = parser.add_argument_group("Base Parameters")
     base_params_group.add_argument("--data_path", type=str,

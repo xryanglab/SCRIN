@@ -132,7 +132,54 @@ mpirun -n 16 scrin \
 
 ## Command-line Options
 
-- **`--save_path`** : Path for saving the results.
+### Mode Options
+
+-   **`--detection_method`** `[radius|nine_grid]` (Required): Method for defining neighboring transcripts.
+    -   `radius`: Defines neighbors based on the straight-line distance between transcripts. Any transcript within the distance specified by `--r_check` is considered a neighbor. This is suitable for continuous-coordinate data, such as from MERFISH.
+    -   `nine_grid`: Defines neighbors as any transcripts located within the same grid square or its eight adjacent squares. This is suitable for array-based data with orderly coordinates, such as from Stereo-seq.
+
+-   **`--background`** `[all|cooccurrence]` (Required): Define the statistical scope used to calculate the parameters for the hypergeometric test.
+    -   `all`: All cells in the dataset are used to calculate the background parameters (`n`, `M`, `N`). Recommended for homogeneous data (e.g., single cell lines or types) or when using a global background is necessary to find weak co-localization signals.
+    -   `cooccurrence`: For a given gene pair A-B, only cells where both A and B are present are used to calculate the background parameters. Recommended for heterogeneous data with mixed or highly specific cell types.
+    -   *Note: The value `k` (observed co-localizations) is calculated the same way in both modes, but the background parameters `n`, `M`, and `N` will differ.*
+
+-   **`--mode`** `[robust|fast]` (Required): The running mode for the program.
+    -   `fast`: Designed for large-scale spatial transcriptomics datasets, this mode employs complex asynchronous threading to enable low-memory, high-speed parallel processing, but requires higher network bandwidth for inter-process communication.
+    -   `robust`: A more stable running mode but requires higher memory. Can be used for simple tests or if issues are encountered with the `fast` mode.
+
+### Base Parameters
+
+-   **`--data_path`** `[str]`: Path to the input data file. Default: `"st_data.csv"`.
+-   **`--save_path`** `[str]`: Path for saving the results. Default: `"st_hypertest_result.csv"`.
+-   **`--column_name`** `[str]`: A comma-separated string of column names used in the data. Default: `"x,y,z,geneID,cell"`.
+-   **`--r_check`** `[float]`: The radius for neighbor searching when `detection_method` is set to `'radius'`. Default: `None`.
+-   **`--grid_check`** `[int]`: The grid size for the `'nine_grid'` detection method. Default: `None`.
+-   **`--min_gene_number`** `[int]`: Minimum number of transcripts for a gene to be included in the analysis. Default: `5`.
+-   **`--min_neighbor_number`** `[int]`: Minimum number of neighbors for a gene pair to be considered. Default: `1`.
+-   **`--expression_level`** `[float]`: The maximum allowed ratio of expression counts between the two genes in a pair. Default: `100`.
+-   **`--filter_threshold`** `[float]`: The q-value (Benjamini-Hochberg adjusted p-value) threshold for filtering results in post-processing. Default: `0.00001`.
+-   **`--pair_keep`** `[first|last]`: Method for handling duplicate pairs during post-processing. Default: `'last'`.
+
+### Intermediate Result Options
+For large datasets, use these options to save intermediate results and prevent memory overflow.
+
+-   **`--intermediate_dir`** `[str]`: Directory path to save intermediate results. Enables this feature if set. Default: `None`.
+-   **`--intermediate_split`** `[int]`: The interval at which to save intermediate results. Default: `100`.
+
+### Distribution Options
+For co-localization distribution analysis.
+
+-   **`--distribution_analysis`**: A flag to enable co-localization distribution analysis.
+-   **`--r_dist`** `[float]`: The radius for co-localization distribution analysis. If set, distribution data will be saved. Default: `None`.
+-   **`--around_count_threshold`** `[int]`: The threshold for the number of points around a gene to consider it for distribution analysis. Default: `100`.
+-   **`--distribution_save_interval`** `[int]`: The interval for saving distribution data to a file. Default: `10`.
+
+### Unsegmented Data Options
+For data without prior cell segmentation.
+
+-   **`--unsegmented`**: A flag to enable processing of unsegmented data.
+-   **`--rect_length`** `[float]`: The side length of the rectangle used to partition the data. The recommended value is the approximate cell diameter. Default: `20`.
+-   **`--rtree_path`** `[str]`: Path to an R-tree index file to accelerate spatial queries. Can be used to load or save an index. Default: `None`.
 
 ## Output
 
@@ -142,14 +189,7 @@ An example output file (`test.csv`) is shown below:
 gene_A,gene_B,pvalue,qvalue_BH,qvalue_BO,gene_B_around,gene_B_slice,gene_around,gene_slice,gene_A_N,gene_B_N,pair,enrichment_ratio
 Kcnj8,Vtn,0.0,0.0,0.0,566,51096,3603,4885769,2241,51096,Kcnj8_Vtn,17.820363130077027,15.17803020428641,15.020977497702212
 Bgn,Vtn,0.0,0.0,0.0,1728,51096,15717,4885769,9904,51096,Bgn_Vtn,12.062024287226444,10.84581394375585,10.512841372618968
-Cspg4,Vtn,0.0,0.0,0.0,2074,51096,20569,4885769,12918,51096,Cspg4_Vtn,11.017065217111972,10.007031026811507,9.641433282377363
-Cspg4,Pdgfra,0.0,0.0,0.0,658,16515,20569,4885769,12918,16515,Cspg4_Pdgfra,10.106358468927027,9.815047084194957,9.463832976934873
-Bgn,Igf2,0.0,0.0,0.0,695,30296,15717,4885769,9904,30296,Bgn_Igf2,7.565480080472584,7.27515694909074,7.131202827107043
-Vtn,Igf2,0.0,0.0,0.0,2309,30296,70250,4885769,51096,30296,Igf2_Vtn,5.813629355563021,5.655413409911846,5.300602558199196
-Igf2,Timp3,0.0,0.0,0.0,1554,38561,41507,4885769,30296,38561,Igf2_Timp3,5.052599780665756,4.900872600692388,4.743668274521491
-Vtn,Rgs5,0.0,0.0,0.0,2969,43823,70250,4885769,51096,43823,Rgs5_Vtn,5.157343774794808,4.981640519743338,4.711885124103652
-Flt1,Cldn5,0.0,0.0,0.0,2066,46402,50865,4885769,41692,46402,Cldn5_Flt1,4.574565975489097,4.42937668412253,4.276687312341203
-Unc5b,Sox10,5.78605e-319,1.1745686e-316,1.1745686e-316,542,15859,18330,4885769,13112,15859,Sox10_Unc5b,9.65228563955043,9.396446096907969,9.109487664186856
+...
 ```
 
 ## Note
