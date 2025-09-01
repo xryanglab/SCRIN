@@ -114,21 +114,45 @@ pip install .
 
 ## Usage
 
+The basic command structure to run SCRIN is as follows:
+
+```bash
+mpirun -n <number_of_processes> scrin [OPTIONS]
+```
+
+### Examples
+
+This section provides an example to demonstrate a typical workflow for using SCRIN. We will use a sample dataset derived from the [CosMx SMI Mouse Brain FFPE dataset](https://nanostring.com/products/cosmx-spatial-molecular-imager/ffpe-dataset/cosmx-smi-mouse-brain-ffpe-dataset/) by NanoString. For demonstration purposes, we have randomly sampled 1000 cells from the original data.
+
+**Download the example dataset here:** [https://zenodo.org/records/17019789] 
+
 ```bash
 mpirun -n 16 scrin \
 	--detection_method "radius" \
 	--background "cooccurrence" \
 	--mode "fast" \
-	--data_path "Run1000_S1_Half_tx_file_cell_1000cells.csv" \
-	--save_path "halfbrain_1000cells_hyper_test_cb.csv" \
+	--data_path "Mouse_brain_CosMX_1000cells.csv" \
+	--save_path "Mouse_brain_CosMX_1000cells_hyper_test_cb.csv" \
 	--column_name "x_global_px,y_global_px,z,target,cell" \
 	--r_check 4.16 \
 	--filter_threshold 0.00001 \
-	--min_gene_number 6 \
+	--min_gene_number 5 \
 	--min_neighbor_number 1 \
 	--expression_level 100 \
-	--intermediate_dir "halfbrain_1000cells_hyper_test_cb"
+	--intermediate_dir "Mouse_brain_CosMX_1000cells_hyper_test_cb"
 ```
+
+**Explanation of parameters:**
+
+* `--detection_method "radius"`: Since CosMx data provides continuous spatial coordinates, we use the `radius` method to define neighbors based on their straight-line distance.
+* `--background "cooccurrence"`: The mouse brain is a highly heterogeneous tissue containing many different cell types. Using `cooccurrence` is recommended here, as it calculates the statistical background for a gene pair (A-B) using only the cells where both A and B are expressed. This provides a more specific and relevant context compared to the `all` option (which would be suitable for more homogeneous samples like cell cultures).
+* `--mode "fast"`: We use the `fast` mode to enable high-speed, low-memory parallel processing, which is essential for large datasets. This requires an intermediate directory (`--intermediate_dir`) to store temporary files.
+* `--column_name`: This parameter maps the column names in our input CSV (`x_global_px`, `y_global_px`, etc.) to the fields SCRIN expects (`x`, `y`, `z`, `geneID`, `cell`).
+* `--r_check 4.16`: Sets the search radius. For this dataset, this value corresponds to approximately 0.5 µm.
+* `--filter_threshold 0.00001`: Sets the q-value cutoff for the final results, ensuring that only statistically significant interactions are reported.
+* `--min_gene_number 5`: A pre-filtering step to improve efficiency by excluding sparsely expressed genes (those with fewer than 5 total transcripts in the dataset) from the analysis.
+* `--min_neighbor_number 1`: Skips significance testing for gene pairs with zero observed co-localization events, as they cannot be statistically significant.
+* `--expression_level 100`: Filters out gene pairs with highly imbalanced expression levels (where one gene's transcript count is over 100 times that of the other) to avoid potential artifacts.
 
 ## Command-line Options
 
@@ -149,52 +173,48 @@ mpirun -n 16 scrin \
 
 ### Base Parameters
 
--   **`--data_path`** `[str]`: Path to the input data file. Default: `"st_data.csv"`.
--   **`--save_path`** `[str]`: Path for saving the results. Default: `"st_hypertest_result.csv"`.
--   **`--column_name`** `[str]`: A comma-separated string of column names used in the data. Default: `"x,y,z,geneID,cell"`.
--   **`--r_check`** `[float]`: The radius for neighbor searching when `detection_method` is set to `'radius'`. Default: `None`.
--   **`--grid_check`** `[int]`: The grid size for the `'nine_grid'` detection method. Default: `None`.
--   **`--min_gene_number`** `[int]`: Minimum number of transcripts for a gene to be included in the analysis. Default: `5`.
--   **`--min_neighbor_number`** `[int]`: Minimum number of neighbors for a gene pair to be considered. Default: `1`.
--   **`--expression_level`** `[float]`: The maximum allowed ratio of expression counts between the two genes in a pair. Default: `100`.
+-   **`--data_path`** `[str]` (Required): Path to the input data file. The file must contain transcript spatial coordinates and gene IDs at a minimum. Including cell IDs is recommended. Please refer to `demo.csv` for the standard input format.
+-   **`--save_path`** `[str]` (Required): Path for saving the results. 
+-   **`--column_name`** `[str]` (Required): A comma-separated string specifying which columns from the input file to use. The provided names are mapped sequentially to the expected fields: `x` (x-coordinate), `y` (y-coordinate), `z` (z-coordinate, optional), `geneID` (gene ID), and `cell` (cell ID, optional). If an optional field like `z` is not present in your data, simply omit it from the string while maintaining the order of the remaining fields. For example, if your file provides columns for x, y, geneID, and cell (but no z), and their names are `pos_x, pos_y, gene_name, cell_label`, your input should be `"pos_x,pos_y,gene_name,cell_label"`. The minimum required fields correspond to `x`, `y`, and `geneID`. Default: `"x,y,z,geneID,cell"`.
+-   **`--r_check`** `[float]`: The search radius for the `'radius'` detection method. Transcripts with a distance between them less than this value are considered neighbors.
+-   **`--grid_check`** `[int]`: Sets the search window size for the `'nine_grid'` method. It defines a square area of `(2 * grid_check + 1) x (2 * grid_check + 1)` grid cells around a central transcript. For example, `grid_check=1` defines a 3x3 grid (9 cells), while `grid_check=2` defines a 5x5 grid (25 cells). Transcripts within this area are considered neighbors.
+-   **`--min_gene_number`** `[int]`: A pre-filtering step to remove sparsely expressed genes. Any gene whose total transcript count across the entire dataset is below this value will be excluded from the analysis. Default: `5`.
+-   **`--min_neighbor_number`** `[int]`: Filters out gene pairs with insufficient co-localization events. For a given pair A-B, if the number of times transcripts of gene B are detected as neighbors of transcripts of gene A is below this threshold, that pair will be skipped during the significance calculation. Default: `1`.
+-   **`--expression_level`** `[float]`: A filter to exclude gene pairs with highly imbalanced expression. This value sets the maximum allowable fold-difference in total transcript counts between two genes. For example, with the default of `100`, any pair where one gene is over 100 times more abundant than the other will be ignored. Default: `100`.
 -   **`--filter_threshold`** `[float]`: The q-value (Benjamini-Hochberg adjusted p-value) threshold for filtering results in post-processing. Default: `0.00001`.
--   **`--pair_keep`** `[first|last]`: Method for handling duplicate pairs during post-processing. Default: `'last'`.
+-   **`--pair_keep`** `[first|last]`: Method for deduplicating bidirectional pairs (e.g., A-B and B-A) during post-processing. Pairs are first sorted by their q-value in ascending order. `first` keeps the pair with the smaller q-value, while `last` keeps the one with the larger q-value. Default: `'last'`.
 
 ### Intermediate Result Options
 For large datasets, use these options to save intermediate results and prevent memory overflow.
 
--   **`--intermediate_dir`** `[str]`: Directory path to save intermediate results. Enables this feature if set. Default: `None`.
--   **`--intermediate_split`** `[int]`: The interval at which to save intermediate results. Default: `100`.
+-   **`--intermediate_dir`** `[str]`: Directory path to save intermediate results. This parameter is required when using `fast` mode.
+-   **`--intermediate_split`** `[int]`: Controls the chunk size for processing. A larger value reduces memory usage but may decrease computational efficiency. It is not recommended to set this value higher than the total number of genes or `1000`, as excessive partitioning can lead to issues. Default: `100`.
 
 ### Distribution Options
-For co-localization distribution analysis.
+Options for analyzing the distance distribution of co-localized gene pairs.
 
--   **`--distribution_analysis`**: A flag to enable co-localization distribution analysis.
--   **`--r_dist`** `[float]`: The radius for co-localization distribution analysis. If set, distribution data will be saved. Default: `None`.
--   **`--around_count_threshold`** `[int]`: The threshold for the number of points around a gene to consider it for distribution analysis. Default: `100`.
--   **`--distribution_save_interval`** `[int]`: The interval for saving distribution data to a file. Default: `10`.
+-   **`--distribution_analysis`**: A flag to enable the analysis. This will save the distance distribution for each neighboring pair and calculate its statistical features. **Warning:** This can generate very large files and significantly increase runtime. Ensure you have sufficient disk space before enabling.
+-   **`--r_dist`** `[float]`: Defines the maximum radius for the distance distribution analysis. For a pair A-B, all observed distances between their transcripts that are less than this value will be recorded.
+-   **`--around_count_threshold`** `[int]`: A filter to ensure the statistical reliability of the distance distribution. For a gene pair, the analysis is performed only if the total number of observed co-localization events (i.e., distances less than `--r_dist`) exceeds this threshold. This prevents analyzing pairs with too few data points to be meaningful. Default: `100`.
+-   **`--distribution_save_interval`** `[int]`: Controls how often collected distance data is written to intermediate files to manage memory. A smaller value decreases memory usage. For whole transcriptome datasets, a value no higher than `100` is recommended. Default: `10`.
 
 ### Unsegmented Data Options
 For data without prior cell segmentation.
 
 -   **`--unsegmented`**: A flag to enable processing of unsegmented data.
 -   **`--rect_length`** `[float]`: The side length of the rectangle used to partition the data. The recommended value is the approximate cell diameter. Default: `20`.
--   **`--rtree_path`** `[str]`: Path to an R-tree index file to accelerate spatial queries. Can be used to load or save an index. Default: `None`.
+-   **`--rtree_path`** `[str]`: Path to an R-tree index file for accelerating spatial queries. If the file does not exist, a new index will be built and saved to this path. If the file already exists, it will be loaded to save time.
 
 ## Output
 
-An example output file (`test.csv`) is shown below:
+An example output file (`Mouse_brain_CosMX_1000cells_hyper_test_cb_dedup_1e-05_post_proc.csv`) is shown below:
 
 ```
 gene_A,gene_B,pvalue,qvalue_BH,qvalue_BO,gene_B_around,gene_B_slice,gene_around,gene_slice,gene_A_N,gene_B_N,pair,enrichment_ratio
-Kcnj8,Vtn,0.0,0.0,0.0,566,51096,3603,4885769,2241,51096,Kcnj8_Vtn,17.820363130077027,15.17803020428641,15.020977497702212
-Bgn,Vtn,0.0,0.0,0.0,1728,51096,15717,4885769,9904,51096,Bgn_Vtn,12.062024287226444,10.84581394375585,10.512841372618968
+Scd2,Plp1,9.545615285730711e-303,8.447869527871679e-300,8.44786952787168e-300,1175,13953,19063,803815,6850,13953,Plp1_Scd2,3.550872927582488
+Meg3,Malat1,5.393831772255401e-178,4.967719062247224e-175,4.967719062247224e-175,2561,68433,26756,1287763,10284,68433,Malat1_Meg3,1.8011867965562922
 ...
 ```
-
-## Note
-
-Confirm that all required dependencies are installed before running SCRIN.
 
 ## References
 
