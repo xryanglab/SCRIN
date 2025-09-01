@@ -1,6 +1,6 @@
 # SCRIN: Subcellular Colocalized RNA Interaction Network
 
-Systematic dissections of the subcellular RNA colocalization landscapes in high-resolution spatial transcriptomics.
+SCRIN is a tool for identifying RNA co-localization networks within subcellular spatial transcriptomics data.
 
 ## Requirements & Compatibility
 
