@@ -111,11 +111,11 @@ def update_pkl_file(task_result_sub, gene_id_list_split, opt, task_tag, monitor_
     merge_gene_id_list_num = list(merge_results_num.keys())
     merge_gene_id_list_dist = list(merge_results_dist.keys())
 
-    # Update pkl files for region results
+    # Update pkl files for NeighborDetection results
     for i, gene_id_list in enumerate(gene_id_list_split):
         common_gene_id = list(set(gene_id_list) & set(merge_gene_id_list_num))
         if len(common_gene_id) != 0:
-            with open(f'{opt.intermediate_dir}/Region/task_results{i}.pkl', 'rb') as f:
+            with open(f'{opt.intermediate_dir}/NeighborDetection/task_results{i}.pkl', 'rb') as f:
                 gene_dict_pkl = pickle.load(f)
                 # Update intersection gene_ids
                 for gene_id in common_gene_id:
@@ -123,7 +123,7 @@ def update_pkl_file(task_result_sub, gene_id_list_split, opt, task_tag, monitor_
                     for sub_gene_id, sub_num in merge_results_num[gene_id][1].items():
                         gene_dict_pkl[gene_id][1][sub_gene_id] += sub_num
 
-                with open(f'{opt.intermediate_dir}/Region/task_results{i}.pkl', 'wb') as f:
+                with open(f'{opt.intermediate_dir}/NeighborDetection/task_results{i}.pkl', 'wb') as f:
                     pickle.dump(gene_dict_pkl, f)
         else:
             pass
@@ -239,7 +239,7 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_
                     dict_pkl_num[gene_id] = [0, defaultdict(int)]
                     dict_pkl_distance[gene_id] = defaultdict(list)
 
-                with open(f'{opt.intermediate_dir}/Region/task_results{i}.pkl', 'wb') as f:
+                with open(f'{opt.intermediate_dir}/NeighborDetection/task_results{i}.pkl', 'wb') as f:
                     pickle.dump(dict_pkl_num, f)
                 with open(f'{opt.intermediate_dir}/Distance/task_results{i}.pkl', 'wb') as f:
                     pickle.dump(dict_pkl_distance, f)
@@ -560,14 +560,14 @@ def hyper_test_glb_distribution(opt):
         print("--------------------")
 
         # Remove existing folders and their contents
-        shutil.rmtree(f'{opt.intermediate_dir}/Region', ignore_errors=True)
+        shutil.rmtree(f'{opt.intermediate_dir}/NeighborDetection', ignore_errors=True)
         shutil.rmtree(f'{opt.intermediate_dir}/Distance', ignore_errors=True)
         shutil.rmtree(f'{opt.intermediate_dir}/HyperTest', ignore_errors=True)
         shutil.rmtree(f'{opt.intermediate_dir}/DistanceShape', ignore_errors=True)
         shutil.rmtree(f'{opt.intermediate_dir}/Distance_split', ignore_errors=True)
 
         # Create folders
-        os.makedirs(f'{opt.intermediate_dir}/Region')
+        os.makedirs(f'{opt.intermediate_dir}/NeighborDetection')
         os.makedirs(f'{opt.intermediate_dir}/Distance')
         os.makedirs(f'{opt.intermediate_dir}/HyperTest')
         os.makedirs(f'{opt.intermediate_dir}/DistanceShape')
@@ -681,7 +681,7 @@ def hyper_test_glb_distribution(opt):
 
     cell_group_list = None
 
-    around_file_list = [f for f in os.listdir(f'{opt.intermediate_dir}/Region') if f.startswith('task_results')]
+    around_file_list = [f for f in os.listdir(f'{opt.intermediate_dir}/NeighborDetection') if f.startswith('task_results')]
     around_file_list.sort()
     distance_file_list = [f for f in os.listdir(f'{opt.intermediate_dir}/Distance') if f.startswith('task_results')]
     distance_file_list.sort()
@@ -753,7 +753,7 @@ def hyper_test_glb_distribution(opt):
     for i, file in enumerate(around_file_list):
         if rank == 0:
             print(f"Hyper test: Processing intermediate file {file}...")
-            with open(f'{opt.intermediate_dir}/Region/{file}', 'rb') as f:
+            with open(f'{opt.intermediate_dir}/NeighborDetection/{file}', 'rb') as f:
                 dict_around_list = pickle.load(f)
             tuple_around = [(gene_id, pixel_num_around, gene_around_dict) for gene_id, (pixel_num_around, gene_around_dict) in dict_around_list.items()]
             print("len of tuple_around: ", len(tuple_around))
