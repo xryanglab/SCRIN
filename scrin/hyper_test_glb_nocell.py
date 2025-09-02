@@ -505,13 +505,18 @@ def hyper_test_glb_nocell(opt):
         print("Rect list generated.")
 
         print("Start to build point comb list.")
+        if opt.detection_method == 'radius':
+            additional_check = opt.r_check
+        else:
+            additional_check = opt.grid_check
+
         for rect in tqdm(rect_list):
             hits = list(idx.intersection(rect))
             if len(hits) != 0:
                 point_re = [point_list[i] for i in hits]
 
                 hits_ex = list(idx.intersection(
-                    (rect[0] - opt.r_check, rect[1] - opt.r_check, rect[2] + opt.r_check, rect[3] + opt.r_check)))
+                    (rect[0] - additional_check, rect[1] - additional_check, rect[2] + additional_check, rect[3] + additional_check)))
                 point_re_ex = [point_list[i] for i in hits_ex]
 
                 point_comb_list.append([point_re, point_re_ex])
