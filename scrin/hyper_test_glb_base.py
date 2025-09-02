@@ -402,7 +402,10 @@ def hyper_test_glb_base(opt):
         print("Using radius detection method.")
 
     # Task 1: Detect neighbors in each cell
-    partial_func = partial(region_function_cell, r_check=opt.r_check)
+    if opt.detection_method == 'nine_grid':
+        partial_func = partial(region_function_cell, r_check=opt.grid_check)
+    else:
+        partial_func = partial(region_function_cell, r_check=opt.r_check)
 
     if rank == 0:
         dict_around_list = distribute_tasks_dynamic(comm, rank, size, cell_group_list, partial_func, 'NeighborDetection')
