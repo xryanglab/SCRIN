@@ -422,11 +422,11 @@ def hyper_test_glb(opt):
         #         raise ValueError("Detection method 'nine_grid' requires --grid_check to be set.")
 
         # Remove existing folders and their contents
-        shutil.rmtree(f'{opt.intermediate_dir}/Region', ignore_errors=True)
+        shutil.rmtree(f'{opt.intermediate_dir}/NeighborDetection', ignore_errors=True)
         shutil.rmtree(f'{opt.intermediate_dir}/HyperTest', ignore_errors=True)
 
         # Create folders
-        os.makedirs(f'{opt.intermediate_dir}/Region')
+        os.makedirs(f'{opt.intermediate_dir}/NeighborDetection')
         os.makedirs(f'{opt.intermediate_dir}/HyperTest')
 
     if rank == 0:
@@ -536,13 +536,13 @@ def hyper_test_glb(opt):
 
     comm.Barrier()
 
-    around_file_list = [f for f in os.listdir(f'{opt.intermediate_dir}/Region') if f.startswith('task_results')]
+    around_file_list = [f for f in os.listdir(f'{opt.intermediate_dir}/NeighborDetection') if f.startswith('task_results')]
     around_file_list.sort()
 
     for i, file in enumerate(around_file_list):
         if rank == 0:
             print(f"Hyper test: Processing intermediate file {file}...")
-            with open(f'{opt.intermediate_dir}/Region/{file}', 'rb') as f:
+            with open(f'{opt.intermediate_dir}/NeighborDetection/{file}', 'rb') as f:
                 dict_around_list = pickle.load(f)
             tuple_around = [(gene_id, pixel_num_around, gene_around_dict) for gene_id, (pixel_num_around, gene_around_dict) in dict_around_list.items()]
             print("len of tuple_around: ", len(tuple_around))
