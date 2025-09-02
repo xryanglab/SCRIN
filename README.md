@@ -145,6 +145,7 @@ This section provides an example to demonstrate a typical workflow for using SCR
 **Download the example dataset here:** [https://zenodo.org/records/17019789] 
 
 ```bash
+# Launch SCRIN on 16 parallel processes. Adjust the value of -n as needed.
 mpirun -n 16 scrin \
 	--detection_method "radius" \
 	--background "cooccurrence" \
