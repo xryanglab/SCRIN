@@ -122,6 +122,24 @@ mpirun -n <number_of_processes> scrin [OPTIONS]
 
 ### Examples
 
+#### Input Data Format
+
+SCRIN expects a CSV (Comma-Separated Values) file as input. The file should contain columns for spatial coordinates (x, y, and optionally z), a gene identifier, and a cell identifier. The header names can be arbitrary, as they will be mapped using the ``--column_name`` parameter.
+
+Here are the first few lines of the example file, ``Mouse_brain_CosMX_1000cells.csv``:
+
+```csv
+x_global_px,y_global_px,z,target,cell
+-494295.483333333,7129.73,-1,Prickle2,1_23
+-494312.553333333,7164.95,-1,Meg3,1_23
+...
+```
+
+**Column requirements:**
+* **Coordinates (``x``, ``y``, ``z``)**: At least ``x`` and ``y`` columns are required. The ``z`` column is optional.
+* **Gene ID (``target`` in the example)**: A column containing the names or identifiers of the RNA species.
+* **Cell ID (``cell`` in the example)**: A column indicating which cell each transcript belongs to. This is highly recommended for standard analysis. For data without pre-existing cell segmentation, please refer to the ``Unsegmented Data Options``.
+
 This section provides an example to demonstrate a typical workflow for using SCRIN. We will use a sample dataset derived from the [CosMx SMI Mouse Brain FFPE dataset](https://nanostring.com/products/cosmx-spatial-molecular-imager/ffpe-dataset/cosmx-smi-mouse-brain-ffpe-dataset/) by NanoString. For demonstration purposes, we have randomly sampled 1000 cells from the original data.
 
 **Download the example dataset here:** [https://zenodo.org/records/17019789] 
@@ -173,7 +191,7 @@ mpirun -n 16 scrin \
 
 ### Base Parameters
 
--   **`--data_path`** `[str]` (Required): Path to the input data file. The file must contain transcript spatial coordinates and gene IDs at a minimum. Including cell IDs is recommended. Please refer to `demo.csv` for the standard input format.
+-   **`--data_path`** `[str]` (Required): Path to the input data file. The file must contain transcript spatial coordinates and gene IDs at a minimum. Including cell IDs is recommended. Please refer to `Mouse_brain_CosMX_1000cells.csv` for the standard input format.
 -   **`--save_path`** `[str]` (Required): Path for saving the results. 
 -   **`--column_name`** `[str]` (Required): A comma-separated string specifying which columns from the input file to use. The provided names are mapped sequentially to the expected fields: `x` (x-coordinate), `y` (y-coordinate), `z` (z-coordinate, optional), `geneID` (gene ID), and `cell` (cell ID, optional). If an optional field like `z` is not present in your data, simply omit it from the string while maintaining the order of the remaining fields. For example, if your file provides columns for x, y, geneID, and cell (but no z), and their names are `pos_x, pos_y, gene_name, cell_label`, your input should be `"pos_x,pos_y,gene_name,cell_label"`. The minimum required fields correspond to `x`, `y`, and `geneID`. Default: `"x,y,z,geneID,cell"`.
 -   **`--r_check`** `[float]`: The search radius for the `'radius'` detection method. Transcripts with a distance between them less than this value are considered neighbors.
