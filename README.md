@@ -268,7 +268,7 @@ The columns in the output files correspond to the standard parameters of a hyper
 | `gene_around`    | **(n)** The total number of all transcripts (from any gene) found in the neighborhood of the central gene (`gene_A`). |
 | `gene_slice`     | **(N)** The total number of all transcripts in the defined **statistical background**.              |
 | `gene_A_N`       | The total transcript count for the central gene (`gene_A`) in the defined **statistical background**.                   |
-| `gene_B_N`       | The total transcript count for the target gene (`gene_B`) in the defined **statistical background**; same as 'gene_B_slice'.                    |
+| `gene_B_N`       | The total transcript count for the target gene (`gene_B`) in the defined **statistical background**; same as `gene_B_slice`.                    |
 | `pair`           | A standardized identifier for the gene pair (e.g., alphabetically sorted), used for post-processing.    |
 | `enrichment_ratio`| **($\delta$)** A metric to prioritize pairs that are statistically significant but differ in their degree of enrichment. It is calculated as $\delta = \frac{kN}{nM}$ |
 
