@@ -468,25 +468,32 @@ def hyper_test_glb_nocell(opt):
 
         point_list = []
 
-        if opt.rtree_path is None:
-            idx = index.Index()
+        # Load or build rtree index
+        if opt.rtree_path is not None and os.path.exists(opt.rtree_path + '.dat'):
+            idx = index.Index(opt.rtree_path)
+            print("Load rtree index successfully.")
+            x_list = df_flt_region['x'].tolist()
+            y_list = df_flt_region['y'].tolist()
+            gene_id_region_list = df_flt_region['geneID'].tolist()
+            point_list = list(zip(x_list, y_list, gene_id_region_list))
         else:
-            if os.path.exists(opt.rtree_path + '.dat'):
-                idx = index.Index(opt.rtree_path)
-                print("Load rtree index successfully.")
-                x_list = df_flt_region['x'].tolist()
-                y_list = df_flt_region['y'].tolist()
-                gene_id_region_list = df_flt_region['geneID'].tolist()
-                point_list = list(zip(x_list, y_list, gene_id_region_list))
+            if opt.rtree_path is None:
+                idx = index.Index()
+                print("Building index in memory...")
             else:
                 idx = index.Index(opt.rtree_path)
-                print("Start to build index.")
-                for i, (x, y, label) in tqdm(
-                        enumerate(zip(df_flt_region['x'], df_flt_region['y'], df_flt_region['geneID'])),
-                        total=df_flt_region.shape[0]):
-                    idx.insert(i, (x, y, x, y), obj=label)
-                    point_list.append((x, y, label))
-                print("Index built successfully.")
+                print(f"Start to build index and save to {opt.rtree_path}.")
+
+            x_vals = df_flt_region['x'].values
+            y_vals = df_flt_region['y'].values
+            gene_ids = df_flt_region['geneID'].values
+
+            for i in tqdm(range(len(df_flt_region))):
+                x, y, label = x_vals[i], y_vals[i], gene_ids[i]
+                idx.insert(i, (x, y, x, y), obj=label)
+                point_list.append((x, y, label))
+
+            print("Index built successfully.")
 
         # Generate rectangles for detection
         rect_list, point_comb_list = [], []

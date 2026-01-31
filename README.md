@@ -222,7 +222,7 @@ For data without prior cell segmentation.
 
 -   **`--unsegmented`**: A flag to enable processing of unsegmented data.
 -   **`--rect_length`** `[float]`: The side length of the rectangle used to partition the data. The recommended value is the approximate cell diameter. Default: `20`.
--   **`--rtree_path`** `[str]`: Path to an R-tree index file for accelerating spatial queries. If the file does not exist, a new index will be built and saved to this path. If the file already exists, it will be loaded to save time.
+-   **`--rtree_path`** `[str]`: Path to an R-tree index file for accelerating spatial queries. If not specified (None), the index is built in memory. If a path is provided but the file doesn't exist, a new index will be built and saved there; if it exists, it will be loaded to accelerate queries.
 
 ## Output
 
