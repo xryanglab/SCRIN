@@ -7,11 +7,13 @@ import time
 import pandas as pd
 import numpy as np
 import shutil
+import itertools
 import msgpack
 import zlib
 from mpi4py import MPI
 from mpi4py.util import pkl5
 from tqdm import tqdm
+from scipy.spatial import cKDTree
 from scipy.stats import hypergeom, gaussian_kde, skew, kurtosis
 from statsmodels.stats.multitest import multipletests
 from functools import partial
@@ -209,23 +211,31 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, task_tag, 
 
 def update_recv_asyn(comm, matrix, gene2idx, local_gene2idx, is_idle, local_pool=None, local_pool_lock=None, stop_event=None):
     while not stop_event.is_set():
-        while comm.iprobe(source=MPI.ANY_SOURCE, tag=177):
+        has_data = False
+        # Add processed_count limit to avoid starving the local update pool by continuously processing network requests
+        processed_count = 0
+        while comm.iprobe(source=MPI.ANY_SOURCE, tag=177) and processed_count < 50:
+            has_data = True
             is_idle.clear()
             # recv_update = comm.recv(source=MPI.ANY_SOURCE, tag=177)
             recv_update_compressed = comm.recv(source=MPI.ANY_SOURCE, tag=177)
             recv_update = decompress_dict(recv_update_compressed)  # Decompress the received update data
             update_local_matrix(matrix, recv_update, gene2idx, local_gene2idx)
             is_idle.set()
+            processed_count += 1  # increment processed_count
 
         with local_pool_lock:
             if local_pool is not None and len(local_pool) > 0:
+                has_data = True  # If local pool has work, mark as has_data to avoid sleeping
                 # Check if there are any updates in the local pool that need to be processed
                 for local_update in local_pool:
                     is_idle.clear()
                     update_local_matrix(matrix, local_update, gene2idx, local_gene2idx)
                     is_idle.set()
                 local_pool.clear()  # Clear the local pool
-        time.sleep(0.01)  # Reduce CPU usage
+
+        if not has_data:
+            time.sleep(0.01)  # Only sleep when idle
     print("Async update thread exiting.")
 
 
@@ -320,8 +330,12 @@ def distribute_tasks_dynamic_region(comm, rank, size, tasks, task_processor, tas
         is_idle.set()  # Initially set to idle
         stop_event = Event()  # Asynchronous exit flag
 
+        MAX_INFLIGHT = 50
+        pending = []
+
         task_finished = False  # Task finished flag for non-root processes
 
+        # TODO: if memory problem, set MATPOOL to restrict the number of local updates stored, sleep.
         local_matrix_pool = []  # Local update pool for storing local updates
         local_pool_lock = Lock()  # Lock to protect the local update pool
 
@@ -394,8 +408,14 @@ def distribute_tasks_dynamic_region(comm, rank, size, tasks, task_processor, tas
                                 local_matrix_pool.append(updates)  # Add updates to the local pool
                         else:
                             updates_compressed = compress_dict(updates)  # Compress the updates before sending
+
+                            # Use sliding window
                             req = comm.isend(updates_compressed, dest=des_rank, tag=177)
-                            req.wait()  # Wait for the send to complete
+                            pending.append(req)
+
+                            if len(pending) >= MAX_INFLIGHT:
+                                MPI.Request.Waitany(pending)
+                                pending = [r for r in pending if not r.Test()]
 
             if result is not None:
                 robust_send("yes", dest=0, tag=1, comm=comm, rank=rank, max_retries=10, retry_interval=60)
@@ -404,8 +424,14 @@ def distribute_tasks_dynamic_region(comm, rank, size, tasks, task_processor, tas
             status2 = MPI.Status()
             if comm.iprobe(source=0, tag=4, status=status2):
                 msg = comm.recv(source=0, tag=4)
+
                 if msg == "all_done":
                     print(f"Rank {rank} received all_done signal. Exiting.")
+
+                    for req in pending:
+                        req.wait()
+                    pending.clear()
+
                     stop_event.set()
                     break
 
@@ -415,7 +441,7 @@ def distribute_tasks_dynamic_region(comm, rank, size, tasks, task_processor, tas
 
 
 def asyn_update_output_dict(output_dict, receive_update):
-    gene_id, sub_gene_distribution_dict = receive_update[0], receive_update[1]  # 接收基因id和分布字典
+    gene_id, sub_gene_distribution_dict = receive_update[0], receive_update[1]  # receive gene id and distribution dict
     sub_dict = output_dict.setdefault(gene_id, {})
     for sub_gene_id, distribution_list in sub_gene_distribution_dict.items():
         sub_dict.setdefault(sub_gene_id, []).extend(distribution_list)
@@ -633,29 +659,51 @@ def region_function_cell_multi_proc(df_cell, r_check=0.5, gene_rank_id2rank=None
 
     gene_list = df_cell['geneID'].unique()
 
-    # pre z dict
+    # Precompute dictionaries by z and pre-build KDTrees for each z layer
     df_cell_z_group = df_cell.groupby('z')
     df_cell_z_dict = {}
+    kdtree_dict = {}  # Store KDTree for each z layer
     for z, group in df_cell_z_group:
         df_cell_z_dict[z] = group
+        # Build KDTree from x,y numpy array for faster neighbor queries
+        kdtree_dict[z] = cKDTree(group[['x', 'y']].values)
 
     gene_cell_num = len(df_cell)
     gene_cell_num_all_dict = df_cell.groupby('geneID').size().to_dict()
     all_gene_keys = list(gene_cell_num_all_dict.keys())
+
     for gene in gene_list:
         df_cell_gene = df_cell[df_cell['geneID'] == gene]
 
         gene_around_df_list = []
-        for x, y, z in zip(df_cell_gene['x'], df_cell_gene['y'], df_cell_gene['z']):
-            # df_cell_z = df_cell[df_cell['z'] == z]
-            df_cell_z = df_cell_z_dict[z]
-            distances_xy = np.sqrt((x - df_cell_z['x']) ** 2 + (y - df_cell_z['y']) ** 2)
-            df_cell_gene_around = df_cell_z[distances_xy <= r_check]
-            gene_around_df_list.append(df_cell_gene_around)
 
-        gene_around_df = pd.concat(gene_around_df_list)
-        gene_around_df = gene_around_df.drop_duplicates(subset=['geneID', 'x', 'y', 'z'])
-        gene_around_num = len(gene_around_df)
+        # Process by z layer instead of iterating each transcript
+        for z in df_cell_gene['z'].unique():
+            gene_points_in_z = df_cell_gene[df_cell_gene['z'] == z][['x', 'y']].values
+            if len(gene_points_in_z) == 0:
+                continue
+
+            # Batch query r_check neighborhood for all target points on this z layer
+            # Returns nested list of neighbor row indices in the original group
+            idx_list_of_lists = kdtree_dict[z].query_ball_point(gene_points_in_z, r=r_check)
+
+            # Flatten nested list with itertools and deduplicate using set
+            # This operates on a small set of integers in memory, avoiding expensive DataFrame copies
+            unique_indices = set(itertools.chain.from_iterable(idx_list_of_lists))
+
+            # Use deduplicated absolute indices to slice the DataFrame for this z layer at once
+            if unique_indices:
+                gene_around_df_list.append(df_cell_z_dict[z].iloc[list(unique_indices)])
+
+        if len(gene_around_df_list) > 0:
+            gene_around_df = pd.concat(gene_around_df_list)
+            # Since deduplication in each z layer has been applied, merged result is nearly clean
+            # Keep a final deduplication as a safe fallback (minimal overhead)
+            gene_around_df = gene_around_df.drop_duplicates(subset=['geneID', 'x', 'y', 'z'])
+            gene_around_num = len(gene_around_df)
+        else:
+            gene_around_num = 0
+            gene_around_df = pd.DataFrame(columns=df_cell.columns)
 
         gene_cell_num_dict = gene_around_df.groupby('geneID').size().to_dict()
         if gene in gene_cell_num_dict:
@@ -693,7 +741,7 @@ def region_function_cell_multi_proc_nine_grid(df_cell, r_check=0.5, gene_rank_id
 
     gene_list = df_cell['geneID'].unique()
 
-    # pre z dict
+    # Precompute dictionary by z
     df_cell_z_group = df_cell.groupby('z')
     df_cell_z_dict = {}
     for z, group in df_cell_z_group:
@@ -756,7 +804,7 @@ def region_function_cell_multi_proc_distribution(df_cell, r_check=0.5, r_dist=0.
 
     gene_list = df_cell['geneID'].unique()
 
-    # pre z dict
+    # Precompute dictionary by z
     df_cell_z_group = df_cell.groupby('z')
     df_cell_z_dict = {}
     for z, group in df_cell_z_group:
@@ -1358,4 +1406,3 @@ def hyper_test_clb_distribution(opt):
         else:
             save_path = opt.save_path.replace('.csv', f'_dedup_{opt.filter_threshold}_post_proc.csv')
         df_merge_pair_filter.to_csv(save_path, index=False)
-

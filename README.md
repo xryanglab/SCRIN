@@ -1,6 +1,6 @@
 # SCRIN: Subcellular Colocalized RNA Interaction Network
 
-SCRIN is a tool for identifying RNA co-localization networks within subcellular spatial transcriptomics data.
+SCRIN is a tool for identifying RNA co-localization networks within subcellular spatial transcriptomics data. While traditional co-localization methods are often bottlenecked by the scale of high-throughput data, SCRIN is engineered for unprecedented speed and memory efficiency, unlocking large-scale spatial transcriptomics analysis that was once computationally prohibitive.
 
 ## Requirements & Compatibility
 
@@ -140,6 +140,8 @@ x_global_px,y_global_px,z,target,cell
 * **Gene ID (``target`` in the example)**: A column containing the names or identifiers of the RNA species.
 * **Cell ID (``cell`` in the example)**: A column indicating which cell each transcript belongs to. This is highly recommended for standard analysis. For data without pre-existing cell segmentation, please refer to the ``Unsegmented Data Options``.
 
+**Note:** If you plan to use --background "cooccurrence", it is critical to remove all extracellular transcripts (those not assigned to a specific Cell ID) from your input CSV.
+
 This section provides an example to demonstrate a typical workflow for using SCRIN. We will use a sample dataset derived from the [CosMx SMI Mouse Brain FFPE dataset](https://nanostring.com/products/cosmx-spatial-molecular-imager/ffpe-dataset/cosmx-smi-mouse-brain-ffpe-dataset/) by NanoString. For demonstration purposes, we have randomly sampled 1000 cells from the original data.
 
 **Download the example dataset here:** [https://zenodo.org/records/17019789] 
@@ -183,7 +185,7 @@ mpirun -n 16 scrin \
 
 -   **`--background`** `[all|cooccurrence]` (Required): Define the statistical scope used to calculate the parameters for the hypergeometric test.
     -   `all`: All cells in the dataset are used to calculate the background parameters (`n`, `M`, `N`). For each gene, background parameters are computed only once, which enables more consistent comparison of co-localization strength across gene pairs and provides higher computational efficiency. Recommended for homogeneous data (e.g., single cell lines or types) or when using a global background is needed to find weak co-localization signals.
-    -   `cooccurrence`: For a given gene pair A-B, only cells where both A and B are present are used to calculate the background parameters. Recommended for heterogeneous data with mixed or highly specific cell types.
+    -   `cooccurrence`: For a given gene pair A-B, only cells where both A and B are present are used to calculate the background parameters. Recommended for heterogeneous data with mixed or highly specific cell types. When using this mode, ensure that transcripts not assigned to any cell (extracellular noise) are removed from your input CSV.
     -   *Note: The value `k` (observed co-localizations) is calculated the same way in both modes, but the background parameters `n`, `M`, and `N` will differ.*
 
 -   **`--mode`** `[robust|fast]` (Required): The running mode for the program.
