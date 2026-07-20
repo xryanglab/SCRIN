@@ -2,6 +2,15 @@
 
 SCRIN is a tool for identifying RNA co-localization networks within subcellular spatial transcriptomics data. While traditional co-localization methods are often bottlenecked by the scale of high-throughput data, SCRIN is engineered for unprecedented speed and memory efficiency, unlocking large-scale spatial transcriptomics analysis that was once computationally prohibitive.
 
+## Quick Start
+
+To run SCRIN with the example dataset:
+
+1. Install SCRIN and its dependencies following [Installation](#installation).
+2. Download the example dataset from [Zenodo](https://zenodo.org/records/17019789). The workflow uses `Mouse_brain_CosMX_1000cells.csv`.
+3. Check that the CSV follows the required [Input Data Format](#input-data-format).
+4. Run the command in [Examples](#examples), then inspect the files described in [Expected Output](#expected-output).
+
 ## Requirements & Compatibility
 
 The following dependencies are required to run this project.
@@ -34,7 +43,6 @@ If you encounter issues, we recommend reverting to the specified versions.
   - scikit-learn==1.6.1
   - scipy==1.13.1
   - statsmodels==0.14.5
-  - tools==1.0.2
   - tqdm==4.67.1
 
 ## Installation
@@ -120,9 +128,7 @@ The basic command structure to run SCRIN is as follows:
 mpirun -n <number_of_processes> scrin [OPTIONS]
 ```
 
-### Examples
-
-#### Input Data Format
+### Input Data Format
 
 SCRIN expects a CSV (Comma-Separated Values) file as input. The file should contain columns for spatial coordinates (x, y, and optionally z), a gene identifier, and a cell identifier. The header names can be arbitrary, as they will be mapped using the ``--column_name`` parameter.
 
@@ -140,11 +146,15 @@ x_global_px,y_global_px,z,target,cell
 * **Gene ID (``target`` in the example)**: A column containing the names or identifiers of the RNA species.
 * **Cell ID (``cell`` in the example)**: A column indicating which cell each transcript belongs to. This is highly recommended for standard analysis. For data without pre-existing cell segmentation, please refer to the ``Unsegmented Data Options``.
 
-**Note:** If you plan to use --background "cooccurrence", it is critical to remove all extracellular transcripts (those not assigned to a specific Cell ID) from your input CSV.
+**Note:** Some input files may include extracellular transcripts, often indicated by a cell ID value that does not correspond to a segmented cell. If you plan to use `--background "cooccurrence"`, these transcripts should be removed before running SCRIN. If you use `--background "all"`, keep these transcripts only if you want to include them in the global background statistics; otherwise, remove them before running SCRIN.
+
+### Examples
 
 This section provides an example to demonstrate a typical workflow for using SCRIN. We will use a sample dataset derived from the [CosMx SMI Mouse Brain FFPE dataset](https://nanostring.com/products/cosmx-spatial-molecular-imager/ffpe-dataset/cosmx-smi-mouse-brain-ffpe-dataset/) by NanoString. For demonstration purposes, we have randomly sampled 1000 cells from the original data.
 
-**Download the example dataset here:** [https://zenodo.org/records/17019789] 
+**Example dataset:** Download the example dataset used in this workflow from Zenodo: [https://zenodo.org/records/17019789]
+
+The Zenodo record provides the ready-to-run CSV input file for this example. This workflow uses `Mouse_brain_CosMX_1000cells.csv`.
 
 ```bash
 # Launch SCRIN on 16 parallel processes. Adjust the value of -n as needed.
@@ -156,6 +166,7 @@ mpirun -n 16 scrin \
 	--save_path "Mouse_brain_CosMX_1000cells_hyper_test_cb.csv" \
 	--column_name "x_global_px,y_global_px,z,target,cell" \
 	--r_check 4.16 \
+	--z_mode "discrete" \
 	--filter_threshold 0.00001 \
 	--min_gene_number 5 \
 	--min_neighbor_number 1 \
@@ -166,14 +177,27 @@ mpirun -n 16 scrin \
 **Explanation of parameters:**
 
 * `--detection_method "radius"`: Since CosMx data provides continuous spatial coordinates, we use the `radius` method to define neighbors based on their straight-line distance.
-* `--background "cooccurrence"`: The mouse brain is a highly heterogeneous tissue containing many different cell types. Using `cooccurrence` is recommended here, as it calculates the statistical background for a gene pair (A-B) using only the cells where both A and B are expressed. This provides a more specific and relevant context compared to the `all` option (which would be suitable for more homogeneous samples like single cell type).
+* `--background "cooccurrence"`: The mouse brain is a highly heterogeneous tissue containing many different cell types. Using `cooccurrence` is recommended here, as it calculates the statistical background for a gene pair (A-B) using only the cells where both A and B are expressed. This provides a more specific and relevant context compared to the `all` option (which would be suitable for more homogeneous samples like single cell type). When using this option, remove extracellular transcripts or transcripts not assigned to any cell from the input CSV.
 * `--mode "fast"`: We use the `fast` mode to enable high-speed, low-memory parallel processing, which is essential for large datasets. This requires an intermediate directory (`--intermediate_dir`) to store temporary files.
-* `--column_name`: This parameter maps the column names in our input CSV (`x_global_px`, `y_global_px`, etc.) to the fields SCRIN expects (`x`, `y`, `z`, `geneID`, `cell`).
-* `--r_check 4.16`: Sets the search radius. For this dataset, this value corresponds to approximately 0.5 µm.
+* `--data_path`: Specifies the location of your input raw data. The required CSV structure is described in the [Input Data Format](#input-data-format) section.
+* `--save_path`: The file path where the co-localization results will be saved.
+* `--column_name`: This parameter maps the column names in our input CSV (`x_global_px`, `y_global_px`, etc.) to the fields SCRIN expects (`x`, `y`, `z`, `geneID`, `cell`), as described in the [Input Data Format](#input-data-format) section.
+* `--r_check 4.16`: Sets the search radius. For this dataset, this value corresponds to approximately 0.5 um.
+* `--z_mode "discrete"`: Since CosMx data consists of several discrete z-planes that are relatively far apart, we use the `discrete` mode to ensure neighbor searching only occurs within the same imaging plane.
 * `--filter_threshold 0.00001`: Sets the q-value cutoff for the final results, ensuring that only statistically significant interactions are reported.
 * `--min_gene_number 5`: A pre-filtering step to improve efficiency by excluding sparsely expressed genes (those with fewer than 5 total transcripts in the dataset) from the analysis.
 * `--min_neighbor_number 1`: Skips significance testing for gene pairs with zero observed co-localization events, as they cannot be statistically significant.
 * `--expression_level 100`: Filters out gene pairs with highly imbalanced expression levels (where one gene's transcript count is over 100 times that of the other) to avoid potential artifacts.
+* `--intermediate_dir`: Specifies the directory to store temporary files during parallel processing. This is required when running in `fast` mode to manage memory efficiency across multiple processes.
+
+#### Expected Output
+
+After completion, SCRIN produces two main output files:
+
+* Raw output: `Mouse_brain_CosMX_1000cells_hyper_test_cb.csv`
+* Final processed output: `Mouse_brain_CosMX_1000cells_hyper_test_cb_dedup_1e-05_post_proc.csv`
+
+The final processed output contains significant RNA co-localization pairs after q-value filtering and bidirectional pair deduplication. Key columns include `gene_A`, `gene_B`, `qvalue_BH`, and `enrichment_ratio`. See the `Output` section below for the full column descriptions and an example result snippet.
 
 ## Command-line Options
 
@@ -185,7 +209,7 @@ mpirun -n 16 scrin \
 
 -   **`--background`** `[all|cooccurrence]` (Required): Define the statistical scope used to calculate the parameters for the hypergeometric test.
     -   `all`: All cells in the dataset are used to calculate the background parameters (`n`, `M`, `N`). For each gene, background parameters are computed only once, which enables more consistent comparison of co-localization strength across gene pairs and provides higher computational efficiency. Recommended for homogeneous data (e.g., single cell lines or types) or when using a global background is needed to find weak co-localization signals.
-    -   `cooccurrence`: For a given gene pair A-B, only cells where both A and B are present are used to calculate the background parameters. Recommended for heterogeneous data with mixed or highly specific cell types. When using this mode, ensure that transcripts not assigned to any cell (extracellular noise) are removed from your input CSV.
+    -   `cooccurrence`: For a given gene pair A-B, only cells where both A and B are present are used to calculate the background parameters. Recommended for heterogeneous data with mixed or highly specific cell types. When using this mode, ensure that transcripts not assigned to any cell (extracellular noise) are removed from your input CSV; see the [Input Data Format](#input-data-format) section.
     -   *Note: The value `k` (observed co-localizations) is calculated the same way in both modes, but the background parameters `n`, `M`, and `N` will differ.*
 
 -   **`--mode`** `[robust|fast]` (Required): The running mode for the program.
@@ -194,10 +218,13 @@ mpirun -n 16 scrin \
 
 ### Base Parameters
 
--   **`--data_path`** `[str]` (Required): Path to the input data file. The file must contain transcript spatial coordinates and gene IDs at a minimum. Including cell IDs is recommended. Please refer to `Mouse_brain_CosMX_1000cells.csv` for the standard input format.
+-   **`--data_path`** `[str]` (Required): Path to the input data file. The file must contain transcript spatial coordinates and gene IDs at a minimum. Including cell IDs is recommended. Please refer to the [Input Data Format](#input-data-format) section and `Mouse_brain_CosMX_1000cells.csv` for the standard input format.
 -   **`--save_path`** `[str]` (Required): Path for saving the results. 
--   **`--column_name`** `[str]` (Required): A comma-separated string specifying which columns from the input file to use. The provided names are mapped sequentially to the expected fields: `x` (x-coordinate), `y` (y-coordinate), `z` (z-coordinate, optional), `geneID` (gene ID), and `cell` (cell ID, optional). If an optional field like `z` is not present in your data, simply omit it from the string while maintaining the order of the remaining fields. For example, if your file provides columns for x, y, geneID, and cell (but no z), and their names are `pos_x, pos_y, gene_name, cell_label`, your input should be `"pos_x,pos_y,gene_name,cell_label"`. The minimum required fields correspond to `x`, `y`, and `geneID`. Default: `"x,y,z,geneID,cell"`.
+-   **`--column_name`** `[str]` (Required): A comma-separated string specifying which columns from the input file to use. The provided names are mapped sequentially to the expected fields described in the [Input Data Format](#input-data-format) section: `x` (x-coordinate), `y` (y-coordinate), `z` (z-coordinate, optional), `geneID` (gene ID), and `cell` (cell ID, optional). If an optional field like `z` is not present in your data, simply omit it from the string while maintaining the order of the remaining fields. For example, if your file provides columns for x, y, geneID, and cell (but no z), and their names are `pos_x, pos_y, gene_name, cell_label`, your input should be `"pos_x,pos_y,gene_name,cell_label"`. The minimum required fields correspond to `x`, `y`, and `geneID`. Default: `"x,y,z,geneID,cell"`.
 -   **`--r_check`** `[float]`: The search radius for the `'radius'` detection method. Transcripts with a distance between them less than this value are considered neighbors.
+-   **`--z_mode`** `[discrete|continuous]`: Specifies how the vertical dimension (z-axis) is handled during neighbor searching. Default: `discrete`.
+    - `discrete`: Neighbors are only searched within the same z-plane. This mode is designed for datasets where z-planes are relatively far apart compared to the search radius, or when co-localization is expected to occur only within the same imaging plane (e.g., **MERFISH** or **CosMx** data). **Note: If your data lacks z-coordinates entirely, you should use this mode.**
+    - `continuous`: Performs a true 3D spatial search across all dimensions. This mode is suitable for datasets where z-coordinates are physically continuous or have high resolution, allowing for cross-plane neighbor detection (e.g., **Xenium** data).
 -   **`--grid_check`** `[int]`: Sets the search window size for the `'nine_grid'` method. It defines a square area of `(2 * grid_check + 1) x (2 * grid_check + 1)` grid cells around a central transcript. For example, `grid_check=1` defines a 3x3 grid (9 cells), while `grid_check=2` defines a 5x5 grid (25 cells). Transcripts within this area are considered neighbors.
 -   **`--min_gene_number`** `[int]`: A pre-filtering step to remove sparsely expressed genes. Any gene whose total transcript count across the entire dataset is below this value will be excluded from the analysis. Default: `5`.
 -   **`--min_neighbor_number`** `[int]`: Filters out gene pairs with insufficient co-localization events. For a given pair A-B, if the number of times transcripts of gene B are detected as neighbors of transcripts of gene A is below this threshold, that pair will be skipped during the significance calculation. Default: `1`.

@@ -9,12 +9,12 @@ import pandas as pd
 import numpy as np
 from mpi4py import MPI
 from mpi4py.util import pkl5
-from tqdm import tqdm
 from scipy.stats import hypergeom, gaussian_kde, skew, kurtosis
 from statsmodels.stats.multitest import multipletests
 from functools import partial
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from scrin.core.neighborhood import region_function_cell_glb_distribution
 from scrin.tools.result_proc import add_pair_column, test_result_df_filter, test_result_df_ratio_proc
 
 
@@ -295,54 +295,6 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_
                 break
             result = task_processor(task)
             robust_send(result, dest=0, tag=1, comm=comm, rank=rank, max_retries=10, retry_interval=60)
-
-
-def region_function_cell(df_cell, r_check=0.5, r_dist=0.5):
-    """
-    For a cell, return statistics for all gene types:
-    - total number of surrounding points
-    - number of surrounding points for each gene type
-    Output format: {geneID: [around_num, {geneID1: num1, geneID2: num2, ...}]}
-    """
-
-    dict_out, dict_dist = {}, {}
-    gene_list = df_cell['geneID'].unique()
-    for gene in gene_list:
-        dict_out[gene] = []
-        df_cell_gene = df_cell[df_cell['geneID'] == gene]
-
-        gene_around_df_list, gene_around_dist_df_list = [], []
-        for x, y, z in zip(df_cell_gene['x'], df_cell_gene['y'], df_cell_gene['z']):
-            df_cell_z = df_cell[df_cell['z'] == z]
-            distances_xy = np.sqrt((x - df_cell_z['x']) ** 2 + (y - df_cell_z['y']) ** 2)
-            df_cell_z_copy = df_cell_z.copy()
-            df_cell_z_copy['distances_xy'] = distances_xy
-
-            df_cell_gene_around = df_cell_z_copy[distances_xy <= r_check]
-            gene_around_df_list.append(df_cell_gene_around)
-            df_cell_gene_around_dist = df_cell_z_copy[distances_xy <= r_dist]
-            gene_around_dist_df_list.append(df_cell_gene_around_dist)
-
-        gene_around_df = pd.concat(gene_around_df_list)
-        gene_around_df = gene_around_df.drop_duplicates(subset=['geneID', 'x', 'y', 'z'])
-        gene_around_num = len(gene_around_df)
-        dict_out[gene].append(gene_around_num)
-
-        gene_around_dist_df = pd.concat(gene_around_dist_df_list)
-
-        gene_cell_num_dict = gene_around_df.groupby('geneID').size().to_dict()
-        if gene in gene_cell_num_dict:
-            del gene_cell_num_dict[gene]
-        dict_out[gene].append(gene_cell_num_dict)
-
-        gene_cell_dist_dict = {}
-        for gene_id, group in gene_around_dist_df.groupby('geneID'):
-            gene_cell_dist_dict[gene_id] = group['distances_xy'].tolist()
-        if gene in gene_cell_dist_dict:
-            del gene_cell_dist_dict[gene]
-        dict_dist[gene] = gene_cell_dist_dict
-
-    return [dict_out, dict_dist]
 
 
 def test_function(gene_B_around_num, gene_A_N, gene_B_N,
@@ -669,7 +621,7 @@ def hyper_test_glb_distribution(opt):
     expression_level_local = opt.expression_level
 
     # Task 1: Region Function
-    partial_func = partial(region_function_cell, r_check=opt.r_check, r_dist=opt.r_dist)
+    partial_func = partial(region_function_cell_glb_distribution, r_check=opt.r_check, r_dist=opt.r_dist)
 
     if rank == 0:
         dict_around_list = distribute_tasks_dynamic(comm, rank, size, cell_group_list, partial_func, opt, 'NeighborDetection', intermediate_split=opt.intermediate_split, intermediate_save=True, gene_id_list=gene_id_list)
@@ -816,6 +768,13 @@ def hyper_test_glb_distribution(opt):
         if rank == 0:
             if not any(isinstance(_, pd.DataFrame) for _ in result_output):
                 continue
+
+            # remove None results and concatenate into a single DataFrame
+            result_output = [result for result in result_output if result is not None]
+            if len(result_output) == 0:
+                print(f"No valid results found in intermediate file {file}. Skipping.")
+                continue
+
             df_result = pd.concat(result_output)
             
             df_result = shape_correct(df_result, opt)

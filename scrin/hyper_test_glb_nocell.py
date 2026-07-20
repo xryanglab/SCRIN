@@ -17,6 +17,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from rtree import index
 import time
+from scrin.core.neighborhood import region_function_without_cell
 from scrin.tools.result_proc import add_pair_column, test_result_df_filter, test_result_df_ratio_proc
 
 
@@ -201,54 +202,6 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_
                 break
             result = task_processor(task)
             robust_send(result, dest=0, tag=1, comm=comm, rank=rank, max_retries=10, retry_interval=60)
-
-
-def region_function_without_cell(point_comb_list, r_check=1, detection_method='radius'):
-    """
-    For a cell-free dataset, return statistics for all gene types:
-    - Total number of surrounding points
-    - Number of surrounding points for each gene type
-    Output format: {geneID: [around_num, {geneID1: num1, geneID2: num2, ...}]}
-    """
-    point_list = point_comb_list[0]
-    point_list_ex = point_comb_list[1]
-    df_cell = pd.DataFrame(point_list, columns=['x', 'y', 'geneID'])
-    df_cell_ex = pd.DataFrame(point_list_ex, columns=['x', 'y', 'geneID'])
-
-    dict_out = {}
-    gene_list = df_cell['geneID'].unique()
-    for gene in gene_list:
-        dict_out[gene] = []
-        df_cell_gene = df_cell[df_cell['geneID'] == gene]
-
-        gene_around_df_list = []
-        for x, y in zip(df_cell_gene['x'], df_cell_gene['y']):
-            if detection_method == 'radius':
-                distances_xy = np.sqrt((x - df_cell['x']) ** 2 +
-                                       (y - df_cell['y']) ** 2)
-                df_cell_gene_around = df_cell[distances_xy <= r_check]
-            else:
-                df_cell_gene_around = df_cell[
-                    (abs(x - df_cell['x']) <= r_check) & (abs(y - df_cell['y']) <= r_check)]
-            gene_around_df_list.append(df_cell_gene_around)
-
-        gene_around_df = pd.concat(gene_around_df_list)
-        if detection_method == 'radius':
-            gene_around_df = gene_around_df.drop_duplicates(subset=['geneID', 'x', 'y'])
-            gene_around_num = len(gene_around_df)
-        else:
-            gene_around_df = gene_around_df.drop_duplicates(subset=['geneID', 'x', 'y'])
-            gene_around_df_total = gene_around_df.drop_duplicates(subset=['x', 'y'])
-            gene_around_num = len(gene_around_df_total)
-
-        dict_out[gene].append(gene_around_num)
-
-        gene_cell_num_dict = gene_around_df.groupby('geneID').size().to_dict()
-        if gene in gene_cell_num_dict:
-            del gene_cell_num_dict[gene]
-        dict_out[gene].append(gene_cell_num_dict)
-
-    return dict_out
 
 
 def test_function(gene_B_around_num, gene_A_N, gene_B_N,
@@ -588,6 +541,11 @@ def hyper_test_glb_nocell(opt):
         comm.Barrier()
 
         if rank == 0:
+            # remove None results and concatenate into a single DataFrame
+            result_output = [result for result in result_output if result is not None]
+            if len(result_output) == 0:
+                print(f"No valid results found in intermediate file {file}. Skipping.")
+                continue
             df_result = pd.concat(result_output)
             df_result.to_csv(f'{opt.intermediate_dir}/HyperTest/HyperTest_{i}.csv', index=False)
 

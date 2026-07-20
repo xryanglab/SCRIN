@@ -26,6 +26,8 @@ def main():
                         help="path of result saving")
     base_params_group.add_argument("--column_name", type=str, default="x,y,z,geneID,cell", help="column name used in data")
     base_params_group.add_argument("--r_check", type=float, default=None, help="radius of checking")
+    base_params_group.add_argument("--z_mode", type=str, choices=['discrete', 'continuous'], default='discrete',
+                        help="mode for handling Z-axis, can be 'discrete' or 'continuous', default is 'discrete'")
     base_params_group.add_argument("--grid_check", type=int, default=None, help="grid size for nine_grid detection method, default is 1")
     base_params_group.add_argument("--min_gene_number", type=int, default=5,
                         help="minimum number of transcripts for a gene to be considered")

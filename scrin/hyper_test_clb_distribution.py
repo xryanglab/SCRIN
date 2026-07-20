@@ -1,19 +1,15 @@
 import argparse
 import os
-import csv
-import pickle
 import joblib
 import time
 import pandas as pd
 import numpy as np
 import shutil
-import itertools
 import msgpack
 import zlib
 from mpi4py import MPI
 from mpi4py.util import pkl5
 from tqdm import tqdm
-from scipy.spatial import cKDTree
 from scipy.stats import hypergeom, gaussian_kde, skew, kurtosis
 from statsmodels.stats.multitest import multipletests
 from functools import partial
@@ -21,6 +17,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from threading import Event
+from scrin.core.neighborhood import region_function_cell_multi_proc, region_function_cell_multi_proc_nine_grid, region_function_cell_multi_proc_distribution
 from scrin.tools.result_proc import add_pair_column, test_result_df_filter, test_result_df_ratio_proc
 
 
@@ -647,242 +644,6 @@ def distribute_tasks_dynamic_multi_asyn(comm, rank, size, tasks, task_processor,
         return None
 
 
-def region_function_cell_multi_proc(df_cell, r_check=0.5, gene_rank_id2rank=None):
-    """
-    Return local updates from a cell dataframe.
-    Local update 1: gene B around
-    Local update 2: gene around, gene B, gene all, gene A
-    """
-
-    local_updates1 = defaultdict(list)  # Store updates of gene B around
-    local_updates2 = defaultdict(list)  # Store updates of gene around, gene B, gene all, gene A
-
-    gene_list = df_cell['geneID'].unique()
-
-    # Precompute dictionaries by z and pre-build KDTrees for each z layer
-    df_cell_z_group = df_cell.groupby('z')
-    df_cell_z_dict = {}
-    kdtree_dict = {}  # Store KDTree for each z layer
-    for z, group in df_cell_z_group:
-        df_cell_z_dict[z] = group
-        # Build KDTree from x,y numpy array for faster neighbor queries
-        kdtree_dict[z] = cKDTree(group[['x', 'y']].values)
-
-    gene_cell_num = len(df_cell)
-    gene_cell_num_all_dict = df_cell.groupby('geneID').size().to_dict()
-    all_gene_keys = list(gene_cell_num_all_dict.keys())
-
-    for gene in gene_list:
-        df_cell_gene = df_cell[df_cell['geneID'] == gene]
-
-        gene_around_df_list = []
-
-        # Process by z layer instead of iterating each transcript
-        for z in df_cell_gene['z'].unique():
-            gene_points_in_z = df_cell_gene[df_cell_gene['z'] == z][['x', 'y']].values
-            if len(gene_points_in_z) == 0:
-                continue
-
-            # Batch query r_check neighborhood for all target points on this z layer
-            # Returns nested list of neighbor row indices in the original group
-            idx_list_of_lists = kdtree_dict[z].query_ball_point(gene_points_in_z, r=r_check)
-
-            # Flatten nested list with itertools and deduplicate using set
-            # This operates on a small set of integers in memory, avoiding expensive DataFrame copies
-            unique_indices = set(itertools.chain.from_iterable(idx_list_of_lists))
-
-            # Use deduplicated absolute indices to slice the DataFrame for this z layer at once
-            if unique_indices:
-                gene_around_df_list.append(df_cell_z_dict[z].iloc[list(unique_indices)])
-
-        if len(gene_around_df_list) > 0:
-            gene_around_df = pd.concat(gene_around_df_list)
-            # Since deduplication in each z layer has been applied, merged result is nearly clean
-            # Keep a final deduplication as a safe fallback (minimal overhead)
-            gene_around_df = gene_around_df.drop_duplicates(subset=['geneID', 'x', 'y', 'z'])
-            gene_around_num = len(gene_around_df)
-        else:
-            gene_around_num = 0
-            gene_around_df = pd.DataFrame(columns=df_cell.columns)
-
-        gene_cell_num_dict = gene_around_df.groupby('geneID').size().to_dict()
-        if gene in gene_cell_num_dict:
-            del gene_cell_num_dict[gene]
-        around_gene_keys = list(gene_cell_num_dict.keys())
-
-        gene_rank_belong = gene_rank_id2rank[gene]  # Get the rank to which the current gene belongs
-
-        for gene_around in around_gene_keys:
-            gene_B_around_num = gene_cell_num_dict[gene_around]
-            seq_B_around = [gene, gene_around, gene_B_around_num]  # gene_B_around
-            local_updates1[gene_rank_belong].append(seq_B_around)
-
-        for g in all_gene_keys:
-            if g == gene:
-                continue
-
-            #  Last 4 values are: gene_around, gene_B, gene_all, gene_A
-            seq_gene_around = [gene, g, gene_around_num,
-                               gene_cell_num_all_dict[g], gene_cell_num, gene_cell_num_all_dict[gene]]
-            local_updates2[gene_rank_belong].append(seq_gene_around)
-
-    return [local_updates1, local_updates2]
-
-
-def region_function_cell_multi_proc_nine_grid(df_cell, r_check=0.5, gene_rank_id2rank=None):
-    """
-    Return local updates from a cell dataframe.
-    Local update 1: gene B around
-    Local update 2: gene around, gene B, gene all, gene A
-    """
-
-    local_updates1 = defaultdict(list)  # Store updates of gene B around
-    local_updates2 = defaultdict(list)  # Store updates of gene around, gene B, gene all, gene A
-
-    gene_list = df_cell['geneID'].unique()
-
-    # Precompute dictionary by z
-    df_cell_z_group = df_cell.groupby('z')
-    df_cell_z_dict = {}
-    for z, group in df_cell_z_group:
-        df_cell_z_dict[z] = group
-
-    # gene_cell_num = len(df_cell)
-    gene_cell_num = len(df_cell[['x', 'y', 'z']].drop_duplicates())
-    df_cell_pixel = df_cell.drop_duplicates(subset=['geneID', 'x', 'y', 'z'])
-    gene_cell_num_all_dict = df_cell_pixel.groupby('geneID').size().to_dict()
-    all_gene_keys = list(gene_cell_num_all_dict.keys())
-    for gene in gene_list:
-        df_cell_gene = df_cell[df_cell['geneID'] == gene]
-
-        gene_around_df_list = []
-        for x, y, z in zip(df_cell_gene['x'], df_cell_gene['y'], df_cell_gene['z']):
-            # df_cell_z = df_cell[df_cell['z'] == z]
-            df_cell_z = df_cell_z_dict[z]
-            df_cell_gene_around = df_cell_z[
-                (abs(x - df_cell['x']) <= r_check) & (abs(y - df_cell['y']) <= r_check)]
-            gene_around_df_list.append(df_cell_gene_around)
-
-        gene_around_df = pd.concat(gene_around_df_list)
-        gene_around_num = len(gene_around_df.drop_duplicates(subset=['x', 'y', 'z']))
-
-        gene_around_df_flt = gene_around_df.drop_duplicates(subset=['geneID', 'x', 'y', 'z'])
-        gene_cell_num_dict = gene_around_df_flt.groupby('geneID').size().to_dict()
-        if gene in gene_cell_num_dict:
-            del gene_cell_num_dict[gene]
-        around_gene_keys = list(gene_cell_num_dict.keys())
-
-        gene_rank_belong = gene_rank_id2rank[gene]  # Get the rank to which the current gene belongs
-
-        for gene_around in around_gene_keys:
-            gene_B_around_num = gene_cell_num_dict[gene_around]
-            seq_B_around = [gene, gene_around, gene_B_around_num]  # gene_B_around
-            local_updates1[gene_rank_belong].append(seq_B_around)
-
-        for g in all_gene_keys:
-            if g == gene:
-                continue
-
-            #  Last 4 values are: gene_around, gene_B, gene_all, gene_A
-            seq_gene_around = [gene, g, gene_around_num,
-                               gene_cell_num_all_dict[g], gene_cell_num, gene_cell_num_all_dict[gene]]
-            local_updates2[gene_rank_belong].append(seq_gene_around)
-
-    return [local_updates1, local_updates2]
-
-
-def region_function_cell_multi_proc_distribution(df_cell, r_check=0.5, r_dist=0.5, distribution_save_interval=10, local_distribution_temp=None, local_save_path=None, gene_rank_id2rank=None):
-    """
-    Return local updates from a cell dataframe, store gene distribution information.
-    Local update 1: gene B around
-    Local update 2: gene around, gene B, gene all, gene A
-    """
-
-    local_updates1 = defaultdict(list)  # Store updates of gene B around
-    local_updates2 = defaultdict(list)  # Store updates of gene around, gene B, gene all, gene A
-    distribution_dict = {}  # Store gene distribution information
-
-    gene_list = df_cell['geneID'].unique()
-
-    # Precompute dictionary by z
-    df_cell_z_group = df_cell.groupby('z')
-    df_cell_z_dict = {}
-    for z, group in df_cell_z_group:
-        df_cell_z_dict[z] = group
-
-    gene_cell_num = len(df_cell)
-    gene_cell_num_all_dict = df_cell.groupby('geneID').size().to_dict()
-    all_gene_keys = list(gene_cell_num_all_dict.keys())
-    for gene in gene_list:
-        df_cell_gene = df_cell[df_cell['geneID'] == gene]
-
-        gene_around_df_list, gene_distribution_df_list = [], []
-        for x, y, z in zip(df_cell_gene['x'], df_cell_gene['y'], df_cell_gene['z']):
-            # df_cell_z = df_cell[df_cell['z'] == z]
-            df_cell_z = df_cell_z_dict[z]
-            distances_xy = np.sqrt((x - df_cell_z['x']) ** 2 + (y - df_cell_z['y']) ** 2)
-
-            df_cell_z_copy = df_cell_z.copy()
-            df_cell_z_copy['distances_xy'] = distances_xy
-
-            df_cell_gene_around = df_cell_z_copy[df_cell_z_copy['distances_xy'] <= r_check]
-            df_cell_gene_distribution = df_cell_z_copy[df_cell_z_copy['distances_xy'] <= r_dist]
-
-            gene_around_df_list.append(df_cell_gene_around)
-            gene_distribution_df_list.append(df_cell_gene_distribution)
-
-        gene_around_df = pd.concat(gene_around_df_list)
-        gene_distribution_df = pd.concat(gene_distribution_df_list)
-
-        gene_around_df = gene_around_df.drop_duplicates(subset=['geneID', 'x', 'y', 'z'])
-        gene_around_num = len(gene_around_df)
-
-        gene_cell_num_dict = gene_around_df.groupby('geneID').size().to_dict()
-        if gene in gene_cell_num_dict:
-            del gene_cell_num_dict[gene]
-        around_gene_keys = list(gene_cell_num_dict.keys())
-
-        gene_rank_belong = gene_rank_id2rank[gene]  # Get the rank to which the current gene belongs
-
-        for gene_around in around_gene_keys:
-            gene_B_around_num = gene_cell_num_dict[gene_around]
-            seq_B_around = [gene, gene_around, gene_B_around_num]  # gene_B_around
-            local_updates1[gene_rank_belong].append(seq_B_around)
-
-        for g in all_gene_keys:
-            if g == gene:
-                continue
-
-            #  Last 4 values are: gene_around, gene_B, gene_all, gene_A
-            seq_gene_around = [gene, g, gene_around_num,
-                               gene_cell_num_all_dict[g], gene_cell_num, gene_cell_num_all_dict[gene]]
-            local_updates2[gene_rank_belong].append(seq_gene_around)
-
-        # process gene distribution
-        gene_cell_distribution_dict = {}
-        for gene_id, group in gene_distribution_df.groupby('geneID'):
-            if gene_id == gene:
-                continue
-
-            gene_cell_distribution_dict[gene_id] = group['distances_xy'].tolist()
-
-        if len(gene_cell_distribution_dict) > 0:
-            distribution_dict[gene] = gene_cell_distribution_dict
-
-    # process temp distribution list
-    if len(local_distribution_temp) >= distribution_save_interval:
-        local_save_path_file_count = len(os.listdir(local_save_path))
-        distribution_save_path = os.path.join(local_save_path, f"distribution_{local_save_path_file_count}.pkl")
-        joblib.dump(local_distribution_temp, distribution_save_path, compress=3)
-        # clear the temp list after saving
-        local_distribution_temp.clear()
-
-    if len(distribution_dict) > 0:
-        local_distribution_temp.append(distribution_dict)  # structrue: [{gene: {gene_id: [distances_xy, ...]}, ...}, ...], 1 dict to 1 cell
-
-    return [local_updates1, local_updates2]
-
-
 def distribution_file_proc(joblib_file_path, gene_rank_id2rank):
     rank_data = joblib.load(joblib_file_path)
 
@@ -1250,7 +1011,12 @@ def hyper_test_clb_distribution(opt):
                                    gene_rank_id2rank=gene_rank_id2rank)
         else:
             # Default to radius method
-            partial_func = partial(region_function_cell_multi_proc, r_check=opt.r_check, gene_rank_id2rank=gene_rank_id2rank)
+            if opt.z_mode == 'discrete':
+                partial_func = partial(region_function_cell_multi_proc, r_check=opt.r_check,
+                                       gene_rank_id2rank=gene_rank_id2rank, z_continuous=False)
+            else:
+                partial_func = partial(region_function_cell_multi_proc, r_check=opt.r_check,
+                                       gene_rank_id2rank=gene_rank_id2rank, z_continuous=True)
 
     if rank == 0:
         distribute_tasks_dynamic_region(comm, rank, size, cell_group_list, partial_func, 'NeighborDetection', matrix=np_zero_matrix, gene2idx=gene2idx, local_gene2idx=local_gene2idx)
@@ -1383,6 +1149,11 @@ def hyper_test_clb_distribution(opt):
         if opt.distribution_analysis:
             joblib.dump(gene_rank_dict, f"{opt.intermediate_dir}/gene_rank_dict.pkl")
 
+        # remove None results and concatenate into a single DataFrame
+        result_output = [result for result in result_output if result is not None]
+        if len(result_output) == 0:
+            print("No significant gene pairs found. Please consider adjusting the filtering parameters.")
+            return
         df_result = pd.concat(result_output)
         df_result = add_pair_column(df_result)
         df_result = test_result_df_ratio_proc(df_result)
