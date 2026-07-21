@@ -197,7 +197,7 @@ After completion, SCRIN produces two main output files:
 * Raw output: `Mouse_brain_CosMX_1000cells_hyper_test_cb.csv`
 * Final processed output: `Mouse_brain_CosMX_1000cells_hyper_test_cb_dedup_1e-05_post_proc.csv`
 
-The final processed output contains significant RNA co-localization pairs after q-value filtering and bidirectional pair deduplication. Key columns include `gene_A`, `gene_B`, `qvalue_BH`, and `enrichment_ratio`. See the `Output` section below for the full column descriptions and an example result snippet.
+The final processed output contains significant RNA co-localization pairs after q-value filtering and bidirectional pair deduplication. Key columns include `gene_A`, `gene_B`, `qvalue_BH`, `enrichment_ratio`, and `support_ratio`. See the `Output` section below for the full column descriptions and an example result snippet.
 
 ## Command-line Options
 
@@ -221,10 +221,10 @@ The final processed output contains significant RNA co-localization pairs after 
 -   **`--data_path`** `[str]` (Required): Path to the input data file. The file must contain transcript spatial coordinates and gene IDs at a minimum. Including cell IDs is recommended. Please refer to the [Input Data Format](#input-data-format) section and `Mouse_brain_CosMX_1000cells.csv` for the standard input format.
 -   **`--save_path`** `[str]` (Required): Path for saving the results. 
 -   **`--column_name`** `[str]` (Required): A comma-separated string specifying which columns from the input file to use. The provided names are mapped sequentially to the expected fields described in the [Input Data Format](#input-data-format) section: `x` (x-coordinate), `y` (y-coordinate), `z` (z-coordinate, optional), `geneID` (gene ID), and `cell` (cell ID, optional). If an optional field like `z` is not present in your data, simply omit it from the string while maintaining the order of the remaining fields. For example, if your file provides columns for x, y, geneID, and cell (but no z), and their names are `pos_x, pos_y, gene_name, cell_label`, your input should be `"pos_x,pos_y,gene_name,cell_label"`. The minimum required fields correspond to `x`, `y`, and `geneID`. Default: `"x,y,z,geneID,cell"`.
--   **`--r_check`** `[float]`: The search radius for the `'radius'` detection method. Transcripts with a distance between them less than this value are considered neighbors.
+-   **`--r_check`** `[float ...]`: One or more search radii for the `'radius'` detection method. Transcripts with a distance less than or equal to a radius are considered neighbors. When multiple values are provided, SCRIN runs the complete analysis once per radius in ascending order. Per-radius result files receive an `_r_<radius>` suffix, and per-radius intermediate files are stored in separate subdirectories under `--intermediate_dir`. A single value preserves the original output paths.
 -   **`--z_mode`** `[discrete|continuous]`: Specifies how the vertical dimension (z-axis) is handled during neighbor searching. Default: `discrete`.
     - `discrete`: Neighbors are only searched within the same z-plane. This mode is designed for datasets where z-planes are relatively far apart compared to the search radius, or when co-localization is expected to occur only within the same imaging plane (e.g., **MERFISH** or **CosMx** data). **Note: If your data lacks z-coordinates entirely, you should use this mode.**
-    - `continuous`: Performs a true 3D spatial search across all dimensions. This mode is suitable for datasets where z-coordinates are physically continuous or have high resolution, allowing for cross-plane neighbor detection (e.g., **Xenium** data).
+    - `continuous`: Uses Euclidean distance across x, y, and z. Use this mode only after confirming that the z coordinates and their scale are appropriate for direct 3D distance calculations; otherwise, use `discrete`.
 -   **`--grid_check`** `[int]`: Sets the search window size for the `'nine_grid'` method. It defines a square area of `(2 * grid_check + 1) x (2 * grid_check + 1)` grid cells around a central transcript. For example, `grid_check=1` defines a 3x3 grid (9 cells), while `grid_check=2` defines a 5x5 grid (25 cells). Transcripts within this area are considered neighbors.
 -   **`--min_gene_number`** `[int]`: A pre-filtering step to remove sparsely expressed genes. Any gene whose total transcript count across the entire dataset is below this value will be excluded from the analysis. Default: `5`.
 -   **`--min_neighbor_number`** `[int]`: Filters out gene pairs with insufficient co-localization events. For a given pair A-B, if the number of times transcripts of gene B are detected as neighbors of transcripts of gene A is below this threshold, that pair will be skipped during the significance calculation. Default: `1`.
@@ -242,9 +242,9 @@ For large datasets, use these options to save intermediate results and prevent m
 Options for analyzing the distance distribution of co-localized gene pairs.
 
 -   **`--distribution_analysis`**: A flag to enable the analysis. This will save the distance distribution for each neighboring pair and calculate its statistical features. **Warning:** This can generate very large files and significantly increase runtime. Ensure you have sufficient disk space before enabling.
--   **`--r_dist`** `[float]`: Defines the maximum radius for the distance distribution analysis. For a pair A-B, all observed distances between their transcripts that are less than this value will be recorded.
--   **`--around_count_threshold`** `[int]`: A filter to ensure the statistical reliability of the distance distribution. For a gene pair, the analysis is performed only if the total number of observed co-localization events (i.e., distances less than `--r_dist`) exceeds this threshold. This prevents analyzing pairs with too few data points to be meaningful. Default: `100`.
--   **`--distribution_save_interval`** `[int]`: Controls how often collected distance data is written to intermediate files to manage memory. A smaller value decreases memory usage. For whole transcriptome datasets, a value no higher than `100` is recommended. Default: `10`.
+-   **`--r_dist`** `[float]`: Defines the maximum radius for the distance distribution analysis. For a pair A-B, transcript-pair distances less than or equal to this value are recorded.
+-   **`--around_count_threshold`** `[int]`: Minimum number of transcript-pair distances required to calculate distribution-shape statistics for a gene pair. Distances are pooled across cells, and the code uses `shape_count >= around_count_threshold`. Default: `100`.
+-   **`--distribution_save_interval`** `[int]`: For the `cooccurrence` background, controls how often worker-side distance data is written to intermediate files. A smaller value reduces worker memory usage but increases file I/O. This parameter is not used by the `all`-background distribution path. Default: `10`.
 
 ### Unsegmented Data Options
 For data without prior cell segmentation.
@@ -264,18 +264,31 @@ This is the primary result file you will typically use. It is generated by perfo
 The post-processing includes:
 1.  **Adding a `pair` column**: A standardized, sorted identifier for each gene pair (e.g., `GeneA_GeneB`) is added to facilitate deduplication.
 2.  **Calculating the Enrichment Ratio**: An enrichment ratio is calculated to prioritize pairs with a higher degree of enrichment.
-3.  **Sorting**: The results are sorted by the Benjamini-Hochberg adjusted q-value (`qvalue_BH`) in ascending order.
-4.  **Deduplication**: Bidirectional pairs (e.g., A-B and B-A) are deduplicated based on the `--pair_keep` parameter.
-5.  **Filtering**: The results are filtered to keep only the interactions with a `qvalue_BH` below the `--filter_threshold`.
+3.  **Calculating the Support Ratio**: A support ratio is calculated to prioritize pairs with stronger event-level support independent of statistical significance.
+4.  **Sorting**: The results are sorted by the Benjamini-Hochberg adjusted q-value (`qvalue_BH`) in ascending order.
+5.  **Deduplication**: Bidirectional pairs (e.g., A-B and B-A) are deduplicated based on the `--pair_keep` parameter.
+6.  **Filtering**: The results are filtered to keep only the interactions with a `qvalue_BH` below the `--filter_threshold`.
 
 An example snippet from the final output file is shown below:
 
 ```
-gene_A,gene_B,pvalue,qvalue_BH,qvalue_BO,gene_B_around,gene_B_slice,gene_around,gene_slice,gene_A_N,gene_B_N,pair,enrichment_ratio
-Scd2,Plp1,9.545615285730711e-303,8.447869527871679e-300,8.44786952787168e-300,1175,13953,19063,803815,6850,13953,Plp1_Scd2,3.550872927582488
-Meg3,Malat1,5.393831772255401e-178,4.967719062247224e-175,4.967719062247224e-175,2561,68433,26756,1287763,10284,68433,Malat1_Meg3,1.8011867965562922
+gene_A,gene_B,pvalue,qvalue_BH,qvalue_BO,gene_B_around,gene_B_slice,gene_around,gene_slice,gene_A_N,gene_B_N,pair,enrichment_ratio,support_ratio
+Scd2,Plp1,9.545615285730711e-303,8.447869527871679e-300,8.44786952787168e-300,1175,13953,19063,803815,6850,13953,Plp1_Scd2,3.550872927582488,0.17153284671532848
 ...
 ```
+
+#### Basic Filtering Recommendations
+
+SCRIN's final output contains statistically significant colocalization pairs after directional deduplication and q-value filtering. Whole-transcriptome datasets may still contain many weak but detectable spatial associations, so additional filtering can help prioritize pairs for downstream analysis.
+
+A permissive starting point is:
+
+```text
+gene_B_around >= 10
+support_ratio >= 0.01
+```
+
+These cutoffs are intentionally lenient rather than universal. Thresholds for `gene_B_around`, `support_ratio`, `enrichment_ratio`, `qvalue_BH`, and other relevant metrics can be adjusted according to the dataset, platform, and biological question.
 
 ### Raw Output
 
@@ -299,7 +312,176 @@ The columns in the output files correspond to the standard parameters of a hyper
 | `gene_A_N`       | The total transcript count for the central gene (`gene_A`) in the defined **statistical background**.                   |
 | `gene_B_N`       | The total transcript count for the target gene (`gene_B`) in the defined **statistical background**; same as `gene_B_slice`.                    |
 | `pair`           | A standardized identifier for the gene pair (e.g., alphabetically sorted), used for post-processing.    |
-| `enrichment_ratio`| **($\delta$)** A metric to prioritize pairs that are statistically significant but differ in their degree of enrichment. It is calculated as $\delta = \frac{kN}{nM}$ |
+| `enrichment_ratio`| Neighborhood enrichment relative to the statistical background, calculated as `(gene_B_around / gene_around) / (gene_B_slice / gene_slice)`. It helps prioritize pairs with stronger enrichment. |
+| `support_ratio`   | Event-level support normalized by the less abundant transcript count, calculated as `gene_B_around / min(gene_A_N, gene_B_N)`. It provides an intuitive measure of colocalization-event support independent of statistical significance. |
+
+## Downstream Analysis Tools
+
+The following independent commands provide optional downstream analyses and do not rerun or alter the main SCRIN workflow.
+
+### Colocalization Distance-distribution Analysis
+
+Distance-distribution analysis must be enabled during the original SCRIN run because the raw transcript-pair distances are collected during neighborhood detection. It is available for segmented data in `fast`, `radius`, and `discrete` z mode. Add the following options to a standard SCRIN command:
+
+```bash
+--distribution_analysis \
+--r_dist 8.32 \
+--around_count_threshold 100 \
+--distribution_save_interval 10
+```
+
+`r_check` defines the neighborhood used by the colocalization test, whereas `r_dist` defines the distance range retained for distribution analysis. We recommend setting `r_dist` larger than `r_check` so the distribution also shows distances beyond the colocalization boundary; using the same value truncates that side of the curve and can make its shape difficult to interpret. For the example dataset, `r_check=4.16` corresponds to approximately 0.5 um, and `r_dist=8.32` extends the distribution range to approximately 1 um. Distance observations are collected within cells and within the same z-plane.
+
+For `--save_path result.csv`, the principal outputs are:
+
+```text
+result.csv
+result_shape.csv
+result_dedup_<filter_threshold>_post_proc_shape.csv
+```
+
+`result_shape.csv` contains directed intermediate summaries for pairs with at least `around_count_threshold` distances. The final `post_proc_shape` file applies SCRIN's q-value filtering and undirected pair deduplication, then joins the shape statistics. Significant pairs without enough distance observations remain in the final file with missing shape values.
+
+`shape_count` is the number of transcript-pair distance observations pooled across cells for a pair; shape descriptors are calculated only when `shape_count >= around_count_threshold`. The other shape columns include KDE-estimated `mode`, `skewness`, excess `kurtosis`, `median`, `q25`, `q75`, and `iqr`, while `skewness_adjusted = 1 / (1 + exp(skewness))` maps skewness to a 0-1 scale. These descriptors provide a quick overview of distribution shape and help screen pairs for closer inspection. The `*_relative` columns report the observed-minus-reference shift after subtracting this geometric background, making the direction of the distribution bias easier to interpret; for example, negative relative quantiles indicate a shift toward shorter distances.
+
+The actual distance lists remain in the retained intermediate directory. Extract one or more undirected pairs without rerunning SCRIN:
+
+```bash
+scrin-extract-distances \
+	--intermediate_dir "Mouse_brain_CosMX_1000cells_hyper_test_cb" \
+	--pair "Scd2" "Plp1" \
+	--pair "Clu" "Apoe" \
+	--min_distance_count 500 \
+	--max_distance_count 1000 \
+	--random_seed 42 \
+	--save_path "selected_pair_distances.parquet"
+```
+
+A-B and B-A have the same distance distribution and are treated as one undirected pair. Reversed or repeated inputs are consolidated. For many pairs, use `--pair_path` with a CSV file containing either `gene_A` and `gene_B` columns:
+
+```csv
+gene_A,gene_B
+Scd2,Plp1
+Clu,Apoe
+```
+
+The alternative headers `gene_1` and `gene_2` are also accepted. Additional columns are ignored, so a SCRIN result CSV can be supplied directly. Use the file with `--pair_path "pairs.csv"`; `--pair_path` and `--pair` cannot be used together.
+
+`--min_distance_count` discards pairs with fewer observations. When a pair has more than `--max_distance_count`, the command takes a reproducible uniform sample without replacement; pairs within the requested range are exported completely. Defaults are `min_distance_count=1` and no maximum, so extraction is lossless unless sampling is explicitly requested. Sampling can reduce output size and make distribution plotting more manageable.
+
+Output paths ending in `.csv`, `.csv.gz`, and `.parquet` are supported. Parquet is recommended for large outputs. The long-form output contains `gene_1`, `gene_2`, `pair`, and `distance`; `distance` uses the same coordinate unit as the input x/y values. A companion `*_summary.csv` records the original count, exported count, and whether each pair was complete, sampled, below the minimum, or not found.
+
+For an ideal random reference, suppose B transcripts are uniformly distributed in a complete two-dimensional disk of radius (R) around A. Conditional on (0 \le r \le R), the radial distance has:
+
+```text
+PDF: f(r) = 2r / R^2
+CDF: F(r) = r^2 / R^2
+```
+
+The PDF follows from the increasing area of an annulus at radius (r). It can be overlaid on empirical KDE curves:
+
+```python
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+R = 8.32  # use the r_dist value from the SCRIN run
+df = pd.read_parquet("selected_pair_distances.parquet")
+
+ax = sns.kdeplot(
+    data=df,
+    x="distance",
+    hue="pair",
+    common_norm=False,
+    cut=0,
+    clip=(0, R),
+)
+
+r = np.linspace(0, R, 500)
+ax.plot(r, 2 * r / R**2, "k--", label="Uniform 2D reference")
+ax.set_xlim(0, R)
+ax.set_xlabel("Distance")
+ax.set_ylabel("Probability density")
+plt.show()
+```
+
+The reference line shows the distance profile expected under uniform random placement and makes a pair's distance preference easier to see. Enrichment or a left shift toward short distances indicates stronger short-range organization, whereas a curve closer to the random reference is more consistent with broader co-compartment localization.
+
+### Cell-level Colocalization Events for Tissue Projection
+
+The independent `scrin-colocalization-events` command quantifies selected undirected gene-pair signals at single-cell resolution for projection back onto tissue space. For an undirected pair A-B, every transcript-level A-B connection with a distance less than or equal to `--r_check` contributes one colocalization event. The total number of such connections in each cell provides a direct measure of the local abundance of spatially proximal A-B transcript pairs.
+
+The command recalculates event counts from the original transcript coordinates for only the requested pairs and reports them together with representative cell coordinates. These cell-resolved values can be mapped to colors or other visual encodings in tissue plots without rerunning the main SCRIN significance-testing workflow.
+
+To calculate one pair:
+
+```bash
+scrin-colocalization-events \
+	--data_path "Mouse_brain_CosMX_1000cells.csv" \
+	--save_path "Scd2_Plp1_cell_events.csv" \
+	--column_name "x_global_px,y_global_px,z,target,cell" \
+	--pair "Scd2" "Plp1" \
+	--r_check 4.16 \
+	--z_mode "discrete" \
+	--n_jobs 8
+```
+
+For multiple pairs, supply `--pair_path` instead of `--pair`. The pair file must contain `gene_A` and `gene_B` columns. A SCRIN result CSV can be used directly because additional columns are ignored. Bidirectional and repeated pairs are consolidated, while self-pairs such as A-A are not supported.
+
+The output contains one row per cell and requested pair, including cells with zero events:
+
+```csv
+cell,cell_x,cell_y,gene_A,gene_B,r_check,gene_A_count,gene_B_count,colocalization_count
+1_23,-494300.1,7142.8,Scd2,Plp1,4.16,12,5,18
+```
+
+`cell_x` and `cell_y` are the coordinate-wise medians of all transcripts in the cell, including genes outside the requested pairs. For tissue projection, the input transcript x/y values must be global tissue coordinates. If the input uses coordinates local to each cell or field, these medians will not represent the cells' positions in the full tissue. `gene_A_count` and `gene_B_count` are the corresponding transcript counts in that cell. Duplicate transcript rows are retained as separate molecules. With `--z_mode discrete`, only transcripts in the same z-plane can form an event; with `--z_mode continuous`, three-dimensional Euclidean distance is used.
+
+Use `cell` to link the result to cell metadata or segmentation boundaries, and use `cell_x`, `cell_y`, and `colocalization_count` to draw a point-based tissue map or to color cell regions by event count. Such projections can reveal where an undirected colocalization pair is concentrated across the tissue, including spatial gradients, regional enrichment, or localized hotspots.
+
+The GitHub example dataset contains 1,000 cells randomly sampled from the original dataset and therefore does not preserve a complete or spatially contiguous tissue region. It is suitable for demonstrating the command and output format, but not for producing a meaningful tissue-level projection. For visualization, use a dataset or spatially coherent region of interest that retains the tissue layout.
+
+`--n_jobs` controls local multiprocessing and defaults to `1`. Increase it to process cells in parallel.
+
+### Empirical False-positive Baseline Analysis
+
+Platform-provided negative-control features can be used to examine whether control-associated background contributes to SCRIN-detected colocalization pairs. The GitHub example dataset contains ten negative-control probes named `NegPrb1` through `NegPrb10`. Analyze them with:
+
+```bash
+scrin-false-positive-analysis \
+	--result_path "Mouse_brain_CosMX_1000cells_hyper_test_cb.csv" \
+	--control_group "negative_control_probe" "prefix" "NegPrb"
+```
+
+This command requires the raw SCRIN result rather than a threshold-filtered `post_proc` file. It reproduces SCRIN's bidirectional pair deduplication and then reports results at `qvalue_BH < 0.05`, `0.01`, `0.001`, and `1e-5` by default. Use `--qvalue_thresholds` to supply other cutoffs and `--pair_keep` when the original analysis used a non-default deduplication setting.
+
+A pair is control-associated when either `gene_A` or `gene_B` matches a control rule. The reported control-associated pair fraction is:
+
+```text
+number of significant control-associated pairs / total number of significant pairs
+```
+
+The fraction is an empirical diagnostic, not a direct estimate of the statistical false-positive rate or BH false discovery rate. It reflects only the background represented by the supplied control features and may depend on panel composition, control-feature abundance, and the number of control features.
+
+Control rules use the form `GROUP_NAME MATCH_MODE PATTERN`. Supported match modes are `exact`, `prefix`, `suffix`, and `contains`; add `--ignore_case` for case-insensitive matching. Repeat `--control_group` to define multiple rules or groups. Each group is reported separately, and an `any_control` union is also reported when multiple groups are present.
+
+Results are printed to the terminal. Use `--save_path` to additionally save the small summary table as CSV.
+
+### Multi-radius Analysis of Colocalization Scale
+
+The neighborhood radius defines the spatial scale at which SCRIN evaluates transcript proximity. Smaller radii, approximately 0.2-0.5 um, are useful starting points for highly local RNA organization, whereas larger radii, approximately 1-2 um, can capture broader subcellular domains or compartment-level organization. These ranges are not universal: radius selection should reflect the biological question, the platform's spatial resolution, and the coordinate units of the input data.
+
+With the `radius` detection method, provide multiple values after `--r_check` to run the complete SCRIN workflow at each radius. For the example dataset, the following coordinate values correspond to approximately 0.25, 0.5, 0.75, 1, 1.5, and 2 um:
+
+```bash
+--detection_method "radius" \
+--r_check 2.08 4.16 6.24 8.32 12.48 16.64
+```
+
+For `--save_path result.csv`, SCRIN creates radius-specific raw files such as `result_r_2p08.csv` and final files such as `result_r_2p08_dedup_1e-05_post_proc.csv`. Decimal points are represented by `p` in radius suffixes. When `--intermediate_dir` is supplied, each radius also receives a separate `r_<radius>` subdirectory using the same suffix format.
+
+To examine radius-dependent significance, take the union of pairs significant at any radius, retrieve their `qvalue_BH` values from the raw result at every radius, and plot a pair-by-radius heatmap of `-log10(qvalue_BH)`. The heatmap reveals persistent, short-range, and broader-scale colocalization patterns across pairs.
 
 ## Citation
 
