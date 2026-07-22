@@ -215,7 +215,7 @@ The final processed output contains significant RNA co-localization pairs after 
 
 #### Step 4: Explore downstream analyses and visualizations
 
-The main SCRIN workflow can be followed by optional downstream analyses, visualizations, and diagnostic evaluations:
+The main SCRIN workflow can be followed by optional downstream analyses, visualizations, and diagnostic evaluations. The downstream commands below require SCRIN `1.1.0rc2` or a current installation from the GitHub repository.
 
 * [Colocalization Distance-distribution Analysis](#colocalization-distance-distribution-analysis) must be enabled during the original SCRIN run using the distribution-analysis options because transcript-pair distances are collected during neighborhood detection.
 * [Cell-level Colocalization Events for Tissue Projection](#cell-level-colocalization-events-for-tissue-projection) can be performed afterward for selected pairs using `scrin-colocalization-events` and the original transcript-coordinate file, without rerunning the main significance-testing workflow.
