@@ -215,12 +215,14 @@ The final processed output contains significant RNA co-localization pairs after 
 
 #### Step 4: Explore downstream analyses and visualizations
 
-The main results can be extended through optional downstream analyses and visualizations:
+The main SCRIN workflow can be followed by optional downstream analyses, visualizations, and diagnostic evaluations:
 
 * [Colocalization Distance-distribution Analysis](#colocalization-distance-distribution-analysis) must be enabled during the original SCRIN run using the distribution-analysis options because transcript-pair distances are collected during neighborhood detection.
 * [Cell-level Colocalization Events for Tissue Projection](#cell-level-colocalization-events-for-tissue-projection) can be performed afterward for selected pairs using `scrin-colocalization-events` and the original transcript-coordinate file, without rerunning the main significance-testing workflow.
+* [Empirical False-positive Baseline Analysis](#empirical-false-positive-baseline-analysis) evaluates control-associated pairs across q-value thresholds using the raw SCRIN result.
+* [Multi-radius Analysis of Colocalization Scale](#multi-radius-analysis-of-colocalization-scale) compares pair significance across neighborhood radii to examine scale-dependent colocalization patterns.
 
-Complete derived data, plotting scripts, and figures are available in the [787-cell mouse-brain example](examples/mouse_brain_787cells/README.md).
+Derived data, plotting scripts, and figures for the visualization examples are available in the [787-cell mouse-brain example](examples/mouse_brain_787cells/README.md).
 
 ## Command-line Options
 
@@ -451,7 +453,7 @@ The provided [Gabra2-Gabrb1 event table](examples/mouse_brain_787cells/data/Mous
 
 ### Empirical False-positive Baseline Analysis
 
-Platform-provided negative-control features can be used to examine whether control-associated background contributes to SCRIN-detected colocalization pairs. The [GitHub example dataset](https://zenodo.org/records/21486759) contains ten negative-control probes named `NegPrb1` through `NegPrb10`. Analyze them with:
+Platform-provided negative-control features can be used to examine whether control-associated background contributes to SCRIN-detected colocalization pairs. The [example dataset](https://zenodo.org/records/21486759) contains ten negative-control probes named `NegPrb1` through `NegPrb10`. Analyze them with:
 
 ```bash
 scrin-false-positive-analysis \
@@ -469,7 +471,7 @@ number of significant control-associated pairs / total number of significant pai
 
 The fraction is an empirical diagnostic, not a direct estimate of the statistical false-positive rate or BH false discovery rate. It reflects only the background represented by the supplied control features and may depend on panel composition, control-feature abundance, and the number of control features.
 
-Control rules use the form `GROUP_NAME MATCH_MODE PATTERN`. Supported match modes are `exact`, `prefix`, `suffix`, and `contains`; add `--ignore_case` for case-insensitive matching. Repeat `--control_group` to define multiple rules or groups. Each group is reported separately, and an `any_control` union is also reported when multiple groups are present.
+Control rules use the form `GROUP_NAME MATCH_MODE PATTERN`. The same framework can be applied to user-provided synthetic decoy transcripts, provided that they follow a recognizable naming pattern and are specified as a separate control group. Supported match modes are `exact`, `prefix`, `suffix`, and `contains`; add `--ignore_case` for case-insensitive matching. Repeat `--control_group` to define multiple rules or groups. Each group is reported separately, and an `any_control` union is also reported when multiple groups are present.
 
 Results are printed to the terminal. Use `--save_path` to additionally save the small summary table as CSV.
 
