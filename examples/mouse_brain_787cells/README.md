@@ -11,7 +11,7 @@ This example uses a spatially contiguous, approximately 500 × 500 µm mouse-bra
 | `data/Mouse_brain_CosMx_787cells_Gabra2_Gabrb1_cell_events.csv` | Per-cell Gabra2-Gabrb1 colocalization-event counts and median cell coordinates, calculated with `r_check = 0.5 µm`. |
 | `scripts/plot_distance_distributions.py` | Recreates the selected-pair KDE curves and the two-dimensional random reference. |
 | `scripts/plot_cell_colocalization_map.py` | Recreates the cell-level tissue projection. |
-| `figures/*.png` | Figures displayed below and available for direct use in Markdown. |
+| `figures/*.png` | Figures displayed below. |
 
 The full transcript CSV and SCRIN intermediate directories are intentionally omitted. They are not required to run the plotting scripts.
 
