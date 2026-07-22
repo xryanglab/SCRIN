@@ -114,13 +114,13 @@ To install the latest stable release:
 pip install scrin
 ```
 
-The `1.1.0rc1` pre-release provides early access to the new downstream analysis modules and performance optimizations planned for SCRIN 1.1:
+The `1.1.0rc2` pre-release provides early access to the new downstream analysis modules and performance optimizations planned for SCRIN 1.1:
 
 ```bash
-pip install --upgrade scrin==1.1.0rc1
+pip install --upgrade scrin==1.1.0rc2
 ```
 
-Because `1.1.0rc1` is a pre-release, it is not selected by the default `pip install scrin` command when a stable release is available.
+Because `1.1.0rc2` is a pre-release, it is not selected by the default `pip install scrin` command when a stable release is available.
 
 #### 2. Install from local clone
 
@@ -344,7 +344,7 @@ The columns in the output files correspond to the standard parameters of a hyper
 
 ## Downstream Analysis Tools
 
-The downstream tools documented below are available in the `1.1.0rc1` preview release. See [Install from PyPI](#1-install-from-pypi) for the explicit installation command.
+The downstream tools documented below are available in the `1.1.0rc2` preview release. See [Install from PyPI](#1-install-from-pypi) for the explicit installation command.
 
 The following independent commands provide optional downstream analyses and do not rerun or alter the main SCRIN workflow.
 
