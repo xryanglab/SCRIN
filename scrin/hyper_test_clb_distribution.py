@@ -412,7 +412,8 @@ def distribute_tasks_dynamic_region(comm, rank, size, tasks, task_processor, tas
 
             time.sleep(0.01)  # Reduce CPU usage
 
-        # executor.shutdown()
+        future.result()
+        executor.shutdown(wait=True)
 
 
 def asyn_update_output_dict(output_dict, receive_update):

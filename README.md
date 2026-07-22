@@ -166,7 +166,7 @@ This workflow uses a spatially contiguous, approximately 500 × 500 µm region c
 
 **Example dataset:** Download the ready-to-run `Mouse_brain_CosMx_787cells.csv` file from [Zenodo](https://zenodo.org/records/21486759). Direct URL: https://zenodo.org/records/21486759
 
-Compact derived outputs, plotting inputs, scripts, and figures are available in the repository's [787-cell mouse-brain example](examples/mouse_brain_787cells/README.md).
+Compact derived outputs, plotting inputs, scripts, and figures are available in the repository's [787-cell mouse-brain example](https://github.com/xryanglab/SCRIN/blob/main/examples/mouse_brain_787cells/README.md).
 
 #### Step 2: Run the main SCRIN analysis
 
@@ -411,7 +411,7 @@ The PDF follows from the increasing area of an annulus at radius (r). Overlaying
 
 The repository example compares Apoe-Clu and Gabra2-Gabrb1 using the extracted [distance data](examples/mouse_brain_787cells/data/Mouse_brain_CosMx_787cells_selected_pair_distances.parquet) and [plotting script](examples/mouse_brain_787cells/scripts/plot_distance_distributions.py). Gabra2-Gabrb1 shows a stronger short-distance preference, while Apoe-Clu has a broader profile.
 
-![Selected-pair distance distributions](examples/mouse_brain_787cells/figures/distance-distribution-kde.png)
+![Selected-pair distance distributions](https://raw.githubusercontent.com/xryanglab/SCRIN/main/examples/mouse_brain_787cells/figures/distance-distribution-kde.png)
 
 ### Cell-level Colocalization Events for Tissue Projection
 
@@ -447,7 +447,7 @@ Use `cell` to link the result to cell metadata or segmentation boundaries, and u
 
 The provided [Gabra2-Gabrb1 event table](examples/mouse_brain_787cells/data/Mouse_brain_CosMx_787cells_Gabra2_Gabrb1_cell_events.csv) and [plotting script](examples/mouse_brain_787cells/scripts/plot_cell_colocalization_map.py) produce the map below.
 
-![Gabra2-Gabrb1 cell-level tissue projection](examples/mouse_brain_787cells/figures/gabra2-gabrb1-tissue-projection.png)
+![Gabra2-Gabrb1 cell-level tissue projection](https://raw.githubusercontent.com/xryanglab/SCRIN/main/examples/mouse_brain_787cells/figures/gabra2-gabrb1-tissue-projection.png)
 
 `--n_jobs` controls local multiprocessing and defaults to `1`. Increase it to process cells in parallel.
 

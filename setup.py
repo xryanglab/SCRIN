@@ -9,7 +9,7 @@ long_description = readme_path.read_text(encoding="utf-8") if readme_path.exists
 
 setup(
     name='scrin',
-    version='1.1.0rc1',
+    version='1.1.0rc2',
     description="SCRIN is a tool for identifying RNA co-localization networks within subcellular spatial transcriptomics data.",
     long_description=long_description,
     long_description_content_type="text/markdown",
