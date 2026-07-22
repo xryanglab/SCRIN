@@ -79,6 +79,7 @@ def test_result_df_ratio_proc(file):
     #         df['gene_around'] * (df['gene_B_slice'] - df['gene_B_around']))
 
     df_output['enrichment_ratio'] = (df['gene_B_around'] / df['gene_around']) / (df['gene_B_slice'] / df['gene_slice'])
+    df_output['support_ratio'] = df['gene_B_around'] / df[['gene_A_N', 'gene_B_N']].min(axis=1)
 
     return df_output
 

@@ -4,12 +4,12 @@ SCRIN is a tool for identifying RNA co-localization networks within subcellular 
 
 ## Quick Start
 
-To run SCRIN with the example dataset:
+To run SCRIN with the [example dataset](https://zenodo.org/records/21486759):
 
 1. Install SCRIN and its dependencies following [Installation](#installation).
 2. Download the example dataset from [Zenodo](https://zenodo.org/records/21486759). The workflow uses `Mouse_brain_CosMx_787cells.csv`.
 3. Check that the CSV follows the required [Input Data Format](#input-data-format).
-4. Run the command in [Examples](#examples), then inspect the files described in [Expected Output](#expected-output).
+4. Run the command in [Examples](#examples), then inspect the files described in [Step 3](#step-3-inspect-the-expected-output).
 
 ## Requirements & Compatibility
 
@@ -108,9 +108,19 @@ Once dependencies are installed, SCRIN can be installed in **two ways**:
 
 #### 1. Install from PyPI
 
+To install the latest stable release:
+
 ```bash
 pip install scrin
 ```
+
+The `1.1.0rc1` pre-release provides early access to the new downstream analysis modules and performance optimizations planned for SCRIN 1.1:
+
+```bash
+pip install --upgrade scrin==1.1.0rc1
+```
+
+Because `1.1.0rc1` is a pre-release, it is not selected by the default `pip install scrin` command when a stable release is available.
 
 #### 2. Install from local clone
 
@@ -132,7 +142,7 @@ mpirun -n <number_of_processes> scrin [OPTIONS]
 
 SCRIN expects a CSV (Comma-Separated Values) file as input. The file should contain columns for spatial coordinates (x, y, and optionally z), a gene identifier, and a cell identifier. The header names can be arbitrary, as they will be mapped using the ``--column_name`` parameter.
 
-Here are the first few lines of the example file, ``Mouse_brain_CosMx_787cells.csv``:
+Here are the first few lines of the [example dataset on Zenodo](https://zenodo.org/records/21486759), ``Mouse_brain_CosMx_787cells.csv``:
 
 ```csv
 x,y,z,gene,cell
@@ -142,19 +152,23 @@ x,y,z,gene,cell
 ```
 
 **Column requirements:**
-* **Coordinates (``x``, ``y``, ``z``)**: At least ``x`` and ``y`` columns are required. The ``z`` column is optional. Spatial parameters such as ``--r_check`` and ``--r_dist`` must use the same unit as the coordinates; the example x/y coordinates are in micrometers.
-* **Gene ID (``gene`` in the example)**: A column containing the names or identifiers of the RNA species.
-* **Cell ID (``cell`` in the example)**: A column indicating which cell each transcript belongs to. This is highly recommended for standard analysis. For data without pre-existing cell segmentation, please refer to the ``Unsegmented Data Options``.
+* **Coordinates (``x``, ``y``, ``z``)**: At least ``x`` and ``y`` columns are required. The ``z`` column is optional. Spatial parameters such as ``--r_check`` and ``--r_dist`` must use the same unit as the coordinates; the [example dataset](https://zenodo.org/records/21486759) x/y coordinates are in micrometers.
+* **Gene ID (``gene`` in the [example dataset](https://zenodo.org/records/21486759))**: A column containing the names or identifiers of the RNA species.
+* **Cell ID (``cell`` in the [example dataset](https://zenodo.org/records/21486759))**: A column indicating which cell each transcript belongs to. This is highly recommended for standard analysis. For data without pre-existing cell segmentation, please refer to the ``Unsegmented Data Options``.
 
 **Note:** Some input files may include extracellular transcripts, often indicated by a cell ID value that does not correspond to a segmented cell. If you plan to use `--background "cooccurrence"`, these transcripts should be removed before running SCRIN. If you use `--background "all"`, keep these transcripts only if you want to include them in the global background statistics; otherwise, remove them before running SCRIN.
 
 ### Examples
 
-This workflow uses a spatially contiguous, approximately 500 × 500 µm region containing 787 cells, derived from the [CosMx SMI Mouse Brain FFPE dataset](https://nanostring.com/products/cosmx-spatial-molecular-imager/ffpe-dataset/cosmx-smi-mouse-brain-ffpe-dataset/) by NanoString. The x/y coordinates have been converted from pixels to micrometers, allowing both the main SCRIN analysis and tissue-level downstream visualization.
+#### Step 1: Download the example dataset
 
-**Example dataset:** Download the ready-to-run `Mouse_brain_CosMx_787cells.csv` file from [Zenodo](https://zenodo.org/records/21486759).
+This workflow uses a spatially contiguous, approximately 500 × 500 µm region containing 787 cells, derived from the [CosMx SMI Mouse Brain FFPE dataset](https://nanostring.com/products/cosmx-spatial-molecular-imager/ffpe-dataset/cosmx-smi-mouse-brain-ffpe-dataset/) by NanoString. The sampled field approximately corresponds to the dentate gyrus (DG) region of the mouse hippocampus. The x/y coordinates have been converted from pixels to micrometers, allowing both the main SCRIN analysis and tissue-level downstream visualization.
+
+**Example dataset:** Download the ready-to-run `Mouse_brain_CosMx_787cells.csv` file from [Zenodo](https://zenodo.org/records/21486759). Direct URL: https://zenodo.org/records/21486759
 
 Compact derived outputs, plotting inputs, scripts, and figures are available in the repository's [787-cell mouse-brain example](examples/mouse_brain_787cells/README.md).
+
+#### Step 2: Run the main SCRIN analysis
 
 ```bash
 # Launch SCRIN on 16 parallel processes. Adjust the value of -n as needed.
@@ -182,7 +196,7 @@ mpirun -n 16 scrin \
 * `--data_path`: Specifies the location of your input raw data. The required CSV structure is described in the [Input Data Format](#input-data-format) section.
 * `--save_path`: The file path where the co-localization results will be saved.
 * `--column_name`: This parameter maps the input columns (`x`, `y`, `z`, `gene`, and `cell`) to the fields SCRIN expects, as described in the [Input Data Format](#input-data-format) section.
-* `--r_check 0.5`: Sets a 0.5 µm search radius because the example x/y coordinates are already expressed in micrometers.
+* `--r_check 0.5`: Sets a 0.5 µm search radius because the [example dataset](https://zenodo.org/records/21486759) x/y coordinates are already expressed in micrometers.
 * `--z_mode "discrete"`: Since CosMx data consists of several discrete z-planes that are relatively far apart, we use the `discrete` mode to ensure neighbor searching only occurs within the same imaging plane.
 * `--filter_threshold 0.00001`: Sets the q-value cutoff for the final results, ensuring that only statistically significant interactions are reported.
 * `--min_gene_number 5`: A pre-filtering step to improve efficiency by excluding sparsely expressed genes (those with fewer than 5 total transcripts in the dataset) from the analysis.
@@ -190,7 +204,7 @@ mpirun -n 16 scrin \
 * `--expression_level 100`: Filters out gene pairs with highly imbalanced expression levels (where one gene's transcript count is over 100 times that of the other) to avoid potential artifacts.
 * `--intermediate_dir`: Specifies the directory to store temporary files during parallel processing. This is required when running in `fast` mode to manage memory efficiency across multiple processes.
 
-#### Expected Output
+#### Step 3: Inspect the expected output
 
 After completion, SCRIN produces two main output files:
 
@@ -198,6 +212,15 @@ After completion, SCRIN produces two main output files:
 * Final processed output: `Mouse_brain_CosMx_787cells_hyper_result_cb_dedup_1e-05_post_proc.csv`
 
 The final processed output contains significant RNA co-localization pairs after q-value filtering and bidirectional pair deduplication. Key columns include `gene_A`, `gene_B`, `qvalue_BH`, `enrichment_ratio`, and `support_ratio`. See the `Output` section below for the full column descriptions and an example result snippet.
+
+#### Step 4: Explore downstream analyses and visualizations
+
+The main results can be extended through optional downstream analyses and visualizations:
+
+* [Colocalization Distance-distribution Analysis](#colocalization-distance-distribution-analysis) must be enabled during the original SCRIN run using the distribution-analysis options because transcript-pair distances are collected during neighborhood detection.
+* [Cell-level Colocalization Events for Tissue Projection](#cell-level-colocalization-events-for-tissue-projection) can be performed afterward for selected pairs using `scrin-colocalization-events` and the original transcript-coordinate file, without rerunning the main significance-testing workflow.
+
+Complete derived data, plotting scripts, and figures are available in the [787-cell mouse-brain example](examples/mouse_brain_787cells/README.md).
 
 ## Command-line Options
 
@@ -208,8 +231,8 @@ The final processed output contains significant RNA co-localization pairs after 
     -   `nine_grid`: Defines neighbors as any transcripts located within the same grid square or its eight adjacent squares. This is suitable for array-based data with orderly coordinates, such as from Stereo-seq.
 
 -   **`--background`** `[all|cooccurrence]` (Required): Define the statistical scope used to calculate the parameters for the hypergeometric test.
-    -   `all`: All cells in the dataset are used to calculate the background parameters (`n`, `M`, `N`). For each gene, background parameters are computed only once, which enables more consistent comparison of co-localization strength across gene pairs and provides higher computational efficiency. Recommended for homogeneous data (e.g., single cell lines or types) or when using a global background is needed to find weak co-localization signals.
-    -   `cooccurrence`: For a given gene pair A-B, only cells where both A and B are present are used to calculate the background parameters. Recommended for heterogeneous data with mixed or highly specific cell types. When using this mode, ensure that transcripts not assigned to any cell (extracellular noise) are removed from your input CSV; see the [Input Data Format](#input-data-format) section.
+    -   `all`: All cells in the dataset are used to calculate the background parameters (`n`, `M`, `N`). For each gene, these parameters are computed only once, enabling more consistent comparison of colocalization strength across gene pairs and higher computational efficiency. This option is useful for homogeneous datasets, rapid exploratory analyses, or applications where a common global background is preferred for detecting weaker colocalization signals.
+    -   `cooccurrence`: For a given gene pair A-B, only cells where both A and B are present are used to calculate the background parameters. This pair-specific background generally provides more specific and reliable results by excluding cells that are not informative for the tested pair, including in relatively homogeneous datasets. It is therefore recommended for most analyses, particularly for heterogeneous datasets containing mixed or highly specific cell types, although it has a higher computational cost than `all`. When using this mode, ensure that transcripts not assigned to any cell (extracellular noise) are removed from your input CSV; see the [Input Data Format](#input-data-format) section.
     -   *Note: The value `k` (observed co-localizations) is calculated the same way in both modes, but the background parameters `n`, `M`, and `N` will differ.*
 
 -   **`--mode`** `[robust|fast]` (Required): The running mode for the program.
@@ -218,7 +241,7 @@ The final processed output contains significant RNA co-localization pairs after 
 
 ### Base Parameters
 
--   **`--data_path`** `[str]` (Required): Path to the input data file. The file must contain transcript spatial coordinates and gene IDs at a minimum. Including cell IDs is recommended. Please refer to the [Input Data Format](#input-data-format) section and `Mouse_brain_CosMx_787cells.csv` for the standard input format.
+-   **`--data_path`** `[str]` (Required): Path to the input data file. The file must contain transcript spatial coordinates and gene IDs at a minimum. Including cell IDs is recommended. Please refer to the [Input Data Format](#input-data-format) section and the [example dataset](https://zenodo.org/records/21486759), `Mouse_brain_CosMx_787cells.csv`, for the standard input format.
 -   **`--save_path`** `[str]` (Required): Path for saving the results. 
 -   **`--column_name`** `[str]` (Required): A comma-separated string specifying which columns from the input file to use. The provided names are mapped sequentially to the expected fields described in the [Input Data Format](#input-data-format) section: `x` (x-coordinate), `y` (y-coordinate), `z` (z-coordinate, optional), `geneID` (gene ID), and `cell` (cell ID, optional). If an optional field like `z` is not present in your data, simply omit it from the string while maintaining the order of the remaining fields. For example, if your file provides columns for x, y, geneID, and cell (but no z), and their names are `pos_x, pos_y, gene_name, cell_label`, your input should be `"pos_x,pos_y,gene_name,cell_label"`. The minimum required fields correspond to `x`, `y`, and `geneID`. Default: `"x,y,z,geneID,cell"`.
 -   **`--r_check`** `[float ...]`: One or more search radii for the `'radius'` detection method. Transcripts with a distance less than or equal to a radius are considered neighbors. When multiple values are provided, SCRIN runs the complete analysis once per radius in ascending order. Per-radius result files receive an `_r_<radius>` suffix, and per-radius intermediate files are stored in separate subdirectories under `--intermediate_dir`. A single value preserves the original output paths.
@@ -319,6 +342,8 @@ The columns in the output files correspond to the standard parameters of a hyper
 
 ## Downstream Analysis Tools
 
+The downstream tools documented below are available in the `1.1.0rc1` preview release. See [Install from PyPI](#1-install-from-pypi) for the explicit installation command.
+
 The following independent commands provide optional downstream analyses and do not rerun or alter the main SCRIN workflow.
 
 ### Colocalization Distance-distribution Analysis
@@ -332,7 +357,7 @@ Distance-distribution analysis must be enabled during the original SCRIN run bec
 --distribution_save_interval 10
 ```
 
-`r_check` defines the neighborhood used by the colocalization test, whereas `r_dist` defines the distance range retained for distribution analysis. We recommend setting `r_dist` larger than `r_check` so the distribution also shows distances beyond the colocalization boundary; using the same value truncates that side of the curve and can make its shape difficult to interpret. For the example dataset, `r_check=0.5` µm and `r_dist=1.0` µm. Distance observations are collected within cells and within the same z-plane.
+`r_check` defines the neighborhood used by the colocalization test, whereas `r_dist` defines the distance range retained for distribution analysis. We recommend setting `r_dist` larger than `r_check` so the distribution also shows distances beyond the colocalization boundary; using the same value truncates that side of the curve and can make its shape difficult to interpret. For the [example dataset](https://zenodo.org/records/21486759), `r_check=0.5` µm and `r_dist=1.0` µm. Distance observations are collected within cells and within the same z-plane.
 
 For `--save_path result.csv`, the principal outputs are:
 
@@ -426,7 +451,7 @@ The provided [Gabra2-Gabrb1 event table](examples/mouse_brain_787cells/data/Mous
 
 ### Empirical False-positive Baseline Analysis
 
-Platform-provided negative-control features can be used to examine whether control-associated background contributes to SCRIN-detected colocalization pairs. The GitHub example dataset contains ten negative-control probes named `NegPrb1` through `NegPrb10`. Analyze them with:
+Platform-provided negative-control features can be used to examine whether control-associated background contributes to SCRIN-detected colocalization pairs. The [GitHub example dataset](https://zenodo.org/records/21486759) contains ten negative-control probes named `NegPrb1` through `NegPrb10`. Analyze them with:
 
 ```bash
 scrin-false-positive-analysis \
@@ -452,7 +477,7 @@ Results are printed to the terminal. Use `--save_path` to additionally save the 
 
 The neighborhood radius defines the spatial scale at which SCRIN evaluates transcript proximity. Smaller radii, approximately 0.2-0.5 µm, are useful starting points for highly local RNA organization, whereas larger radii, approximately 1-2 µm, can capture broader subcellular domains or compartment-level organization. These ranges are not universal: radius selection should reflect the biological question, the platform's spatial resolution, and the coordinate units of the input data.
 
-With the `radius` detection method, provide multiple values after `--r_check` to run the complete SCRIN workflow at each radius. Because the example coordinates are in micrometers, the desired radii can be supplied directly:
+With the `radius` detection method, provide multiple values after `--r_check` to run the complete SCRIN workflow at each radius. Because the [example dataset](https://zenodo.org/records/21486759) coordinates are in micrometers, the desired radii can be supplied directly:
 
 ```bash
 --detection_method "radius" \
@@ -461,7 +486,7 @@ With the `radius` detection method, provide multiple values after `--r_check` to
 
 For `--save_path result.csv`, SCRIN creates radius-specific raw files such as `result_r_0p25.csv` and final files such as `result_r_0p25_dedup_1e-05_post_proc.csv`. Decimal points are represented by `p` in radius suffixes. When `--intermediate_dir` is supplied, each radius also receives a separate `r_<radius>` subdirectory using the same suffix format.
 
-To examine radius-dependent significance, take the union of pairs significant at any radius, retrieve their `qvalue_BH` values from the raw result at every radius, and plot a pair-by-radius heatmap of `-log10(qvalue_BH)`. The heatmap reveals persistent, short-range, and broader-scale colocalization patterns across pairs.
+A common downstream analysis is to take the union of pairs significant at any radius, retrieve their `qvalue_BH` values from the raw result at every radius, and plot a pair-by-radius heatmap of `-log10(qvalue_BH)`. This heatmap may reveal persistent, short-range, or broader-scale colocalization patterns across pairs.
 
 ## Citation
 

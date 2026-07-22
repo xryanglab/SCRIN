@@ -1,9 +1,11 @@
 import argparse
+from mpi4py import MPI
 from scrin.hyper_test_glb_base import hyper_test_glb_base
 from scrin.hyper_test_glb import hyper_test_glb
 from scrin.hyper_test_glb_distribution import hyper_test_glb_distribution
 from scrin.hyper_test_glb_nocell import hyper_test_glb_nocell
 from scrin.hyper_test_clb_distribution import hyper_test_clb_distribution
+from scrin.tools.multi_radius import build_radius_options
 
 
 def main():
@@ -25,7 +27,8 @@ def main():
                         default="st_hypertest_result.csv",
                         help="path of result saving")
     base_params_group.add_argument("--column_name", type=str, default="x,y,z,geneID,cell", help="column name used in data")
-    base_params_group.add_argument("--r_check", type=float, default=None, help="radius of checking")
+    base_params_group.add_argument("--r_check", type=float, nargs='+', default=None,
+                        help="one or more radii for neighbor detection")
     base_params_group.add_argument("--z_mode", type=str, choices=['discrete', 'continuous'], default='discrete',
                         help="mode for handling Z-axis, can be 'discrete' or 'continuous', default is 'discrete'")
     base_params_group.add_argument("--grid_check", type=int, default=None, help="grid size for nine_grid detection method, default is 1")
@@ -51,6 +54,10 @@ def main():
     distribution_group.add_argument("--r_dist", type=float, default=None, help="if not None, enable co-localization distribution saving")
     distribution_group.add_argument("--around_count_threshold", type=int, default=100,
                         help="threshold for the number of points around a gene to consider it for distribution analysis")
+    distribution_group.add_argument("--shape_max_distance_count", type=int, default=10000,
+                        help="optional maximum number of distances sampled per pair for shape calculation")
+    distribution_group.add_argument("--shape_qvalue_threshold", type=float, default=0.05,
+                        help="qvalue_BH threshold for selecting pairs for shape calculation")
     distribution_group.add_argument("--distribution_save_interval", type=int, default=10,
                         help="interval for saving distribution data to file")
 
@@ -105,6 +112,17 @@ def main():
             raise ValueError("Nine_grid detection method is not compatible with co-localization distribution analysis. "
                              "Please use 'radius' detection method or close co-localization distribution analysis.")
 
+    if args.shape_max_distance_count is not None:
+        if args.shape_max_distance_count < args.around_count_threshold:
+            raise ValueError(
+                "shape_max_distance_count must be greater than or equal to around_count_threshold."
+            )
+
+    if not 0 < args.shape_qvalue_threshold <= 1:
+        raise ValueError(
+            "shape_qvalue_threshold must be greater than 0 and less than or equal to 1."
+        )
+
     # Select function to run
     func_map = {
         (True, "fast", "all", False): hyper_test_glb_nocell,
@@ -122,9 +140,28 @@ def main():
     if function_run is None:
         raise ValueError("Invalid combination of parameters. Please check your input arguments.")
 
-    # Run the selected function
-    function_run(args)
+    radius_options = build_radius_options(args)
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+
+    # Run the selected function once for each requested radius.
+    for run_index, run_args in enumerate(radius_options, start=1):
+        if len(radius_options) > 1 and rank == 0:
+            print(f"--- Radius run {run_index}/{len(radius_options)}: r_check={run_args.r_check} ---")
+            print(f"Result path: {run_args.save_path}")
+            if run_args.intermediate_dir is not None:
+                print(f"Intermediate directory: {run_args.intermediate_dir}")
+
+        function_run(run_args)
+
+        # Keep all MPI ranks on the same radius before starting the next run.
+        if len(radius_options) > 1:
+            comm.Barrier()
 
 
 if __name__ == '__main__':
     main()
+
+
+
+

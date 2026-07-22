@@ -9,7 +9,7 @@ long_description = readme_path.read_text(encoding="utf-8") if readme_path.exists
 
 setup(
     name='scrin',
-    version='1.0.8',
+    version='1.1.0rc1',
     description="SCRIN is a tool for identifying RNA co-localization networks within subcellular spatial transcriptomics data.",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -31,6 +31,9 @@ setup(
     entry_points={
         'console_scripts': [
             'scrin = scrin.main:main',  # Register the main function of the SCRIN package
+            'scrin-colocalization-events = scrin.tools.colocalization_events:main',
+            'scrin-false-positive-analysis = scrin.tools.false_positive_analysis:main',
+            'scrin-extract-distances = scrin.tools.extract_distances:main',
         ],
     },
 )

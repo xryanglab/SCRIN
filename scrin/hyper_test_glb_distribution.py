@@ -16,21 +16,11 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from scrin.core.neighborhood import region_function_cell_glb_distribution
 from scrin.tools.result_proc import add_pair_column, test_result_df_filter, test_result_df_ratio_proc
-
-
-def split_list_into_sublists(input_list, num_sublists):
-    avg = len(input_list) // num_sublists
-    remainder = len(input_list) % num_sublists
-    sublists = []
-
-    start = 0
-    for i in range(num_sublists):
-        sublist_size = avg + (1 if i < remainder else 0)
-        sublist = input_list[start:start + sublist_size]
-        sublists.append(sublist)
-        start += sublist_size
-
-    return sublists
+from scrin.tools.stream_results import ChunkedCSVWriter, collect_qvalue_pairs, prepare_hyper_result, stream_postprocess
+from scrin.core.parallel import split_list_into_sublists, robust_send
+from scrin.core.statistics import test_function, hyper_test
+from scrin.core.distribution import build_distribution_shape_tasks, distribution_shape_calculate_batch, shape_correct
+from scrin.core.intermediate import merge_dicts
 
 
 def large_bcast(data, comm, rank, size, root=0):
@@ -43,42 +33,6 @@ def large_bcast(data, comm, rank, size, root=0):
         # Non-root processes receive data from root
         data = comm.recv(source=root, tag=77)
     return data
-
-
-def robust_send(data, dest, tag, comm, rank, max_retries=5, retry_interval=1):
-    retries = 0
-    while retries < max_retries:
-        try:
-            comm.send(data, dest=dest, tag=tag)
-            # print("Send successful")
-            return  # Successfully sent, exit function
-        except Exception as e:  # Catch all exceptions
-            print(f"Rank {rank}: Send failed with exception: {e}. Retrying...")
-            time.sleep(retry_interval)
-            retries += 1
-    print("Failed to send data after retries. Raising exception.")
-    raise  # Re-raise the last exception
-
-
-def merge_dicts(list_of_dicts, output_mode='list'):
-    merged_list = []  # Store merged results
-
-    merged_dict = defaultdict(lambda: [0, defaultdict(int)])  # Temporary storage for merging
-
-    for gene_data in list_of_dicts:
-        for gene_id, (around_num, sub_dict) in gene_data.items():
-            merged_dict[gene_id][0] += around_num  # Merge around_num
-            for sub_gene_id, sub_num in sub_dict.items():
-                merged_dict[gene_id][1][sub_gene_id] += sub_num  # Merge values in sub-dict
-
-    if output_mode != 'list':
-        return merged_dict
-
-    # Convert temporary results to list
-    for gene_id, (around_num, sub_dict) in merged_dict.items():
-        merged_list.append((gene_id, around_num, dict(sub_dict)))
-
-    return merged_list
 
 
 def merge_dists(list_of_dicts, output_mode='list'):
@@ -188,7 +142,8 @@ def update_chunk_file(file_path, gene_id_list, common_gene_id, merge_results_dis
     return os.path.getsize(file_path)
 
 
-def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_tag, intermediate_split=100, intermediate_save=False, gene_id_list=None):
+def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_tag, intermediate_split=100,
+                             intermediate_save=False, gene_id_list=None, result_handler=None):
     """
     Dynamically distribute tasks to processes and collect results.
     :param comm: MPI communicator.
@@ -258,7 +213,10 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_
         while active_workers > 0:
             status = MPI.Status()
             result = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-            task_results.append(result)
+            if result_handler is not None and not intermediate_save:
+                result_handler(result)
+            else:
+                task_results.append(result)
             active_workers -= 1
             task_completed += 1
 
@@ -295,127 +253,6 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_
                 break
             result = task_processor(task)
             robust_send(result, dest=0, tag=1, comm=comm, rank=rank, max_retries=10, retry_interval=60)
-
-
-def test_function(gene_B_around_num, gene_A_N, gene_B_N,
-                  gene_slice_num, gene_around_num, minGenenumber, expressionLevel):
-
-    if (gene_around_num < minGenenumber or
-            gene_A_N / gene_B_N > expressionLevel or gene_B_N / gene_A_N > expressionLevel):
-        return None
-
-    a = hypergeom.sf(k=gene_B_around_num - 1, M=gene_slice_num, n=gene_B_N,
-                     N=gene_around_num)
-    para_list = [gene_B_around_num, gene_B_N, gene_around_num, gene_slice_num, gene_A_N]
-
-    return [a, para_list]
-
-
-def hyper_test(tuple_proc, gene_num_dict, pixel_num_slice_all, min_gene_number, expression_level):
-    gene_id = tuple_proc[0]
-    pixel_num_around = tuple_proc[1]
-    gene_around_dict = tuple_proc[2]
-
-    gene_id_around_list, p_list, para_list_all = [], [], []
-
-    for gene_id_around, around_num in gene_around_dict.items():
-        tf_list = test_function(gene_B_around_num=around_num,
-                                gene_A_N=gene_num_dict[gene_id],
-                                gene_B_N=gene_num_dict[gene_id_around],
-                                gene_slice_num=pixel_num_slice_all,
-                                gene_around_num=pixel_num_around,
-                                minGenenumber=min_gene_number,
-                                expressionLevel=expression_level)
-        if tf_list is not None:
-            gene_id_around_list.append(gene_id_around)
-            p_list.append(tf_list[0])
-            para_list_all.append(tf_list[1])
-
-    if len(p_list) == 0:
-        return None
-
-    gene_B_around_num_list, gene_B_N_list, gene_around_num_list, gene_slice_num_list, gene_A_N_list = zip(*para_list_all)
-
-    p_bh = multipletests(p_list, method='fdr_bh')[1]
-    p_bo = multipletests(p_list, method='bonferroni')[1]
-
-    results_df = pd.DataFrame({
-        'gene_A': [gene_id] * len(p_list),
-        'gene_B': gene_id_around_list,
-        'pvalue': p_list,
-        'qvalue_BH': p_bh,
-        'qvalue_BO': p_bo,
-        'gene_B_around': gene_B_around_num_list,
-        'gene_B_slice': gene_B_N_list,
-        'gene_around': gene_around_num_list,
-        'gene_slice': gene_slice_num_list,
-        'gene_A_N': gene_A_N_list,
-        'gene_B_N': gene_B_N_list
-    })
-
-    return results_df
-
-
-def compute_shape_para(distances, bw=0.05):
-    shape_count = len(distances)
-
-    kde = gaussian_kde(distances, bw_method=bw)
-    x = np.linspace(min(distances), max(distances), 1000)
-    density = kde.evaluate(x)
-    mode = x[np.argmax(density)]
-
-    skewness = skew(distances)
-    kurt = kurtosis(distances)
-
-    median = np.median(distances)
-
-    q75, q25 = np.percentile(distances, [75, 25])
-    iqr = q75 - q25
-
-    return shape_count, mode, skewness, kurt, median, q25, q75, iqr
-
-
-def distribution_shape_calculate(tuple_proc, around_count_threshold=100):
-    gene_id = tuple_proc[0]
-    gene_dist_dict = tuple_proc[1]
-
-    gene_id_around_list, dist_list = [], []
-
-    for gene_id_around, dist_list_around in gene_dist_dict.items():
-        if len(dist_list_around) >= around_count_threshold:
-            gene_id_around_list.append(gene_id_around)
-            shape_count, mode, skewness, kurt, median, q25, q75, iqr = compute_shape_para(dist_list_around)
-            dist_list.append([shape_count, mode, skewness, kurt, median, q25, q75, iqr])
-        else:
-            continue
-
-    if len(dist_list) == 0:
-        return None
-
-    results_df = pd.DataFrame({
-        'gene_A': [gene_id] * len(dist_list),
-        'gene_B': gene_id_around_list,
-        'shape_count': [_[0] for _ in dist_list],
-        'mode': [_[1] for _ in dist_list],
-        'skewness': [_[2] for _ in dist_list],
-        'kurtosis': [_[3] for _ in dist_list],
-        'median': [_[4] for _ in dist_list],
-        'q25': [_[5] for _ in dist_list],
-        'q75': [_[6] for _ in dist_list],
-        'iqr': [_[7] for _ in dist_list]
-    })
-
-    return results_df
-
-
-def shape_correct(df_result, opt):
-    df_result.loc[:, 'skewness_adjusted'] = 1 / (1 + np.exp(df_result['skewness']))
-    df_result.loc[:, 'skewness_relative'] = df_result['skewness'] + 0.566
-    df_result.loc[:, 'kurtosis_relative'] = df_result['kurtosis'] + 0.6
-    df_result.loc[:, 'median_relative'] = df_result['median'] - (0.707 * opt.r_dist)
-    df_result.loc[:, 'q25_relative'] = df_result['q25'] - (0.5 * opt.r_dist)
-    df_result.loc[:, 'q75_relative'] = df_result['q75'] - (0.866 * opt.r_dist)
-    return df_result
 
 
 def result_combine(file_list, save_path):
@@ -702,6 +539,18 @@ def hyper_test_glb_distribution(opt):
     distance_file_list = [f for f in os.listdir(f'{opt.intermediate_dir}/Distance_split') if f.startswith('task_results')]
     distance_file_list.sort()
 
+    if rank == 0:
+        hyper_writer = ChunkedCSVWriter(
+            f'{opt.intermediate_dir}/HyperTest', 'HyperTest', transform=prepare_hyper_result
+        )
+        shape_writer = ChunkedCSVWriter(
+            f'{opt.intermediate_dir}/DistanceShape', 'DistanceShape',
+            transform=lambda df: shape_correct(df, opt),
+        )
+    else:
+        hyper_writer = None
+        shape_writer = None
+
     for i, file in enumerate(around_file_list):
         if rank == 0:
             print(f"Hyper test: Processing intermediate file {file}...")
@@ -720,19 +569,23 @@ def hyper_test_glb_distribution(opt):
                                 expression_level=expression_level_local)
 
         if rank == 0:
-            result_output = distribute_tasks_dynamic(comm, rank, size, tuple_around, partial_func2, opt, 'HyperTest')
+            distribute_tasks_dynamic(
+                comm, rank, size, tuple_around, partial_func2, opt, 'HyperTest',
+                result_handler=hyper_writer.write,
+            )
         else:
             distribute_tasks_dynamic(comm, rank, size, tuple_around, partial_func2, opt, 'HyperTest')
-            result_output = None
 
         comm.Barrier()
 
-        if rank == 0:
-            if not any(isinstance(_, pd.DataFrame) for _ in result_output):
-                continue
-            df_result = pd.concat(result_output)
-            df_result.to_csv(f'{opt.intermediate_dir}/HyperTest/HyperTest_{i}.csv', index=False)
-            result_output = None
+    if rank == 0:
+        shape_eligible_pairs = collect_qvalue_pairs(
+            hyper_writer.paths, opt.shape_qvalue_threshold
+        )
+        print(f"Directed pairs eligible for shape calculation (qvalue_BH < "
+              f"{opt.shape_qvalue_threshold}): {len(shape_eligible_pairs)}")
+    else:
+        shape_eligible_pairs = None
 
     if rank == 0:
         task_gene_dict = {}
@@ -745,8 +598,16 @@ def hyper_test_glb_distribution(opt):
             task_id = int(file.replace('task_results', '').replace('.pkl', ''))
             with open(f'{opt.intermediate_dir}/Distance_split/{file}', 'rb') as f:
                 dict_distance_list = pickle.load(f)
-            tuple_dist = [(gene_id, gene_distance_dict) for gene_id, gene_distance_dict in dict_distance_list.items()]
-            print("len of tuple_dist: ", len(tuple_dist))
+            tuple_dist = build_distribution_shape_tasks(
+                dict_distance_list,
+                around_count_threshold=opt.around_count_threshold,
+                shape_max_distance_count=opt.shape_max_distance_count,
+                target_task_count=max(1, (size - 1) * 4),
+                eligible_pairs=shape_eligible_pairs,
+            )
+            shape_pair_count = sum(len(batch) for batch in tuple_dist)
+            print(f"Prepared {shape_pair_count} q-value-eligible pairs in "
+                  f"{len(tuple_dist)} balanced distribution-shape tasks.")
             gene_keys = list(dict_distance_list.keys())
             task_gene_dict[task_id] = gene_keys
 
@@ -755,64 +616,33 @@ def hyper_test_glb_distribution(opt):
             tuple_dist = None
 
         # Task 3: Distribution Shape Calculation
-        partial_func3 = partial(distribution_shape_calculate, around_count_threshold=opt.around_count_threshold)
+        partial_func3 = distribution_shape_calculate_batch
 
         if rank == 0:
-            result_output = distribute_tasks_dynamic(comm, rank, size, tuple_dist, partial_func3, opt, 'ShapeCalculate')
+            distribute_tasks_dynamic(
+                comm, rank, size, tuple_dist, partial_func3, opt, 'ShapeCalculate',
+                result_handler=shape_writer.write,
+            )
         else:
             distribute_tasks_dynamic(comm, rank, size, tuple_dist, partial_func3, opt, 'ShapeCalculate')
-            result_output = None
 
         comm.Barrier()
 
-        if rank == 0:
-            if not any(isinstance(_, pd.DataFrame) for _ in result_output):
-                continue
-
-            # remove None results and concatenate into a single DataFrame
-            result_output = [result for result in result_output if result is not None]
-            if len(result_output) == 0:
-                print(f"No valid results found in intermediate file {file}. Skipping.")
-                continue
-
-            df_result = pd.concat(result_output)
-            
-            df_result = shape_correct(df_result, opt)
-            
-            df_result.to_csv(f'{opt.intermediate_dir}/DistanceShape/DistanceShape_{i}.csv', index=False)
-            result_output = None
-
     if rank == 0:
-        # Save the task_gene_dict to a pickle file
+        # Save the gene IDs assigned to each distance task.
         with open(f'{opt.intermediate_dir}/molecule_distribution_ID.pkl', 'wb') as f:
             pickle.dump(task_gene_dict, f)
 
-        print("Merging local results...")
-        # Combine results from all intermediate files
-        hyper_file_list = [f"{opt.intermediate_dir}/HyperTest/{f}" for f in os.listdir(f'{opt.intermediate_dir}/HyperTest') if f.startswith('HyperTest')]
-        hyper_file_list.sort()
-        distance_shape_file_list = [f"{opt.intermediate_dir}/DistanceShape/{f}" for f in os.listdir(f'{opt.intermediate_dir}/DistanceShape') if f.startswith('DistanceShape')]
-        distance_shape_file_list.sort()
+        shape_output_path = opt.save_path.replace('.csv', '_shape.csv')
+        stream_postprocess(
+            hyper_writer.paths,
+            opt.save_path,
+            opt.save_path.replace('.csv', f'_dedup_{opt.filter_threshold}_post_proc_shape.csv'),
+            filter_threshold=opt.filter_threshold,
+            keep=opt.pair_keep,
+            work_dir=f'{opt.intermediate_dir}/PostProcess',
+            shape_files=shape_writer.paths,
+            shape_output_path=shape_output_path if shape_writer.paths else None,
+        )
 
-        if len(hyper_file_list) != 0:
-            result_combine(hyper_file_list, opt.save_path)
-        else:
-            raise ValueError("No hyper test results found. Please check the input data and parameters.")
-
-        df_result = pd.read_csv(opt.save_path)
-        df_result = add_pair_column(df_result)
-        df_result = test_result_df_ratio_proc(df_result)
-        df_result.to_csv(opt.save_path, index=False)
-
-        if len(distance_shape_file_list) != 0:
-            result_combine(distance_shape_file_list, opt.save_path.replace('.csv', '_shape.csv'))
-            df_shape = pd.read_csv(opt.save_path.replace('.csv', '_shape.csv'))
-            df_merge = pd.merge(df_result, df_shape, on=['gene_A', 'gene_B'], how='left')
-        else:
-            print("No distribution shape data. Around count threshold may be too high.")
-            df_merge = df_result
-
-        df_merge_pair_dedup, df_merge_pair_filter = test_result_df_filter(df_merge, filter_threshold=opt.filter_threshold,
-                                                                keep=opt.pair_keep)
-        df_merge_pair_filter.to_csv(opt.save_path.replace('.csv', '_shape_pair.csv'), index=False)
 

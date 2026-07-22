@@ -19,21 +19,10 @@ from rtree import index
 import time
 from scrin.core.neighborhood import region_function_without_cell
 from scrin.tools.result_proc import add_pair_column, test_result_df_filter, test_result_df_ratio_proc
-
-
-def split_list_into_sublists(input_list, num_sublists):
-    avg = len(input_list) // num_sublists
-    remainder = len(input_list) % num_sublists
-    sublists = []
-
-    start = 0
-    for i in range(num_sublists):
-        sublist_size = avg + (1 if i < remainder else 0)
-        sublist = input_list[start:start + sublist_size]
-        sublists.append(sublist)
-        start += sublist_size
-
-    return sublists
+from scrin.tools.stream_results import ChunkedCSVWriter, prepare_hyper_result, stream_postprocess
+from scrin.core.parallel import split_list_into_sublists, robust_send
+from scrin.core.statistics import test_function, hyper_test
+from scrin.core.intermediate import merge_dicts, update_pkl_file
 
 
 def large_bcast(data, comm, rank, size, root=0):
@@ -48,64 +37,8 @@ def large_bcast(data, comm, rank, size, root=0):
     return data
 
 
-def robust_send(data, dest, tag, comm, rank, max_retries=5, retry_interval=1):
-    retries = 0
-    while retries < max_retries:
-        try:
-            comm.send(data, dest=dest, tag=tag)
-            # Successfully sent, exit the function
-            return
-        except Exception as e:  # Catch all exceptions
-            print(f"Rank {rank}: Send failed with exception: {e}. Retrying...")
-            time.sleep(retry_interval)
-            retries += 1
-    print("Failed to send data after retries. Raising exception.")
-    raise  # Re-raise the last exception
-
-
-def merge_dicts(list_of_dicts, output_mode='list'):
-    merged_list = []  # Store merged results
-    merged_dict = defaultdict(lambda: [0, defaultdict(int)])  # Temporary storage for merging
-
-    for gene_data in list_of_dicts:
-        for gene_id, (around_num, sub_dict) in gene_data.items():
-            merged_dict[gene_id][0] += around_num  # Merge around_num
-            for sub_gene_id, sub_num in sub_dict.items():
-                merged_dict[gene_id][1][sub_gene_id] += sub_num  # Merge values in sub-dict
-
-    if output_mode != 'list':
-        return merged_dict
-
-    # Convert temporary results to list
-    for gene_id, (around_num, sub_dict) in merged_dict.items():
-        merged_list.append((gene_id, around_num, dict(sub_dict)))  # Add results as tuples to the list
-
-    return merged_list
-
-
-def update_pkl_file(task_result_sub, gene_id_list_split, opt, task_tag, monitor_list=None):
-    merge_results = merge_dicts(task_result_sub, output_mode='dict')
-    merge_gene_id_list = list(merge_results.keys())
-
-    # Update pkl files
-    for i, gene_id_list in enumerate(gene_id_list_split):
-        common_gene_id = list(set(gene_id_list) & set(merge_gene_id_list))
-        if len(common_gene_id) != 0:
-            with open(f'{opt.intermediate_dir}/{task_tag}/task_results{i}.pkl', 'rb') as f:
-                gene_dict_pkl = pickle.load(f)
-                # Update intersection gene_ids
-                for gene_id in common_gene_id:
-                    gene_dict_pkl[gene_id][0] += merge_results[gene_id][0]
-                    for sub_gene_id, sub_num in merge_results[gene_id][1].items():
-                        gene_dict_pkl[gene_id][1][sub_gene_id] += sub_num
-                with open(f'{opt.intermediate_dir}/{task_tag}/task_results{i}.pkl', 'wb') as f:
-                    pickle.dump(gene_dict_pkl, f)
-
-    if monitor_list is not None:
-        monitor_list.pop(0)
-
-
-def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_tag, intermediate_split=100, intermediate_save=False, gene_id_list=None):
+def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_tag, intermediate_split=100,
+                             intermediate_save=False, gene_id_list=None, result_handler=None):
     """
     Dynamically distribute tasks to processes and collect results.
     :param comm: MPI communicator.
@@ -166,7 +99,10 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_
         while active_workers > 0:
             status = MPI.Status()
             result = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-            task_results.append(result)
+            if result_handler is not None and not intermediate_save:
+                result_handler(result)
+            else:
+                task_results.append(result)
             active_workers -= 1
             task_completed += 1
 
@@ -202,71 +138,6 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, opt, task_
                 break
             result = task_processor(task)
             robust_send(result, dest=0, tag=1, comm=comm, rank=rank, max_retries=10, retry_interval=60)
-
-
-def test_function(gene_B_around_num, gene_A_N, gene_B_N,
-                  gene_slice_num, gene_around_num, minGenenumber, expressionLevel):
-    """
-    Perform a hypergeometric test for a gene pair.
-    """
-
-    if (gene_around_num < minGenenumber or
-            gene_A_N / gene_B_N > expressionLevel or gene_B_N / gene_A_N > expressionLevel):
-        return None
-
-    a = hypergeom.sf(k=gene_B_around_num - 1, M=gene_slice_num, n=gene_B_N,
-                     N=gene_around_num)
-    para_list = [gene_B_around_num, gene_B_N, gene_around_num, gene_slice_num, gene_A_N]
-
-    return [a, para_list]
-
-
-def hyper_test(tuple_proc, gene_num_dict, pixel_num_slice_all, min_gene_number, expression_level):
-    """
-    Perform hypergeometric tests for all gene pairs in a given region.
-    """
-    gene_id = tuple_proc[0]
-    pixel_num_around = tuple_proc[1]
-    gene_around_dict = tuple_proc[2]
-
-    gene_id_around_list, p_list, para_list_all = [], [], []
-
-    for gene_id_around, around_num in gene_around_dict.items():
-        tf_list = test_function(gene_B_around_num=around_num,
-                                gene_A_N=gene_num_dict[gene_id],
-                                gene_B_N=gene_num_dict[gene_id_around],
-                                gene_slice_num=pixel_num_slice_all,
-                                gene_around_num=pixel_num_around,
-                                minGenenumber=min_gene_number,
-                                expressionLevel=expression_level)
-        if tf_list is not None:
-            gene_id_around_list.append(gene_id_around)
-            p_list.append(tf_list[0])
-            para_list_all.append(tf_list[1])
-
-    if len(p_list) == 0:
-        return None
-
-    gene_B_around_num_list, gene_B_N_list, gene_around_num_list, gene_slice_num_list, gene_A_N_list = zip(*para_list_all)
-
-    p_bh = multipletests(p_list, method='fdr_bh')[1]
-    p_bo = multipletests(p_list, method='bonferroni')[1]
-
-    results_df = pd.DataFrame({
-        'gene_A': [gene_id] * len(p_list),
-        'gene_B': gene_id_around_list,
-        'pvalue': p_list,
-        'qvalue_BH': p_bh,
-        'qvalue_BO': p_bo,
-        'gene_B_around': gene_B_around_num_list,
-        'gene_B_slice': gene_B_N_list,
-        'gene_around': gene_around_num_list,
-        'gene_slice': gene_slice_num_list,
-        'gene_A_N': gene_A_N_list,
-        'gene_B_N': gene_B_N_list
-    })
-
-    return results_df
 
 
 def result_combine(file_list, save_path):
@@ -516,6 +387,13 @@ def hyper_test_glb_nocell(opt):
     around_file_list = [f for f in os.listdir(f'{opt.intermediate_dir}/NeighborDetection') if f.startswith('task_results')]
     around_file_list.sort()
 
+    if rank == 0:
+        hyper_writer = ChunkedCSVWriter(
+            f'{opt.intermediate_dir}/HyperTest', 'HyperTest', transform=prepare_hyper_result
+        )
+    else:
+        hyper_writer = None
+
     for i, file in enumerate(around_file_list):
         if rank == 0:
             print(f"Hyper test: Processing intermediate file {file}...")
@@ -533,39 +411,22 @@ def hyper_test_glb_nocell(opt):
                                 expression_level=expression_level_local)
 
         if rank == 0:
-            result_output = distribute_tasks_dynamic(comm, rank, size, tuple_around, partial_func2, opt, 'HyperTest')
+            distribute_tasks_dynamic(
+                comm, rank, size, tuple_around, partial_func2, opt, 'HyperTest',
+                result_handler=hyper_writer.write,
+            )
         else:
             distribute_tasks_dynamic(comm, rank, size, tuple_around, partial_func2, opt, 'HyperTest')
-            result_output = None
 
         comm.Barrier()
 
-        if rank == 0:
-            # remove None results and concatenate into a single DataFrame
-            result_output = [result for result in result_output if result is not None]
-            if len(result_output) == 0:
-                print(f"No valid results found in intermediate file {file}. Skipping.")
-                continue
-            df_result = pd.concat(result_output)
-            df_result.to_csv(f'{opt.intermediate_dir}/HyperTest/HyperTest_{i}.csv', index=False)
-
     if rank == 0:
-        print("Merging local results...")
-        # Merge all local results into a single CSV file
-        file_list = [f"{opt.intermediate_dir}/HyperTest/{f}" for f in os.listdir(f'{opt.intermediate_dir}/HyperTest') if f.startswith('HyperTest')]
-        file_list.sort()
-
-        if len(file_list) != 0:
-            result_combine(file_list, opt.save_path)
-        else:
-            raise ValueError("No hyper test results found. Please check the input data and parameters.")
-
-        df_result = pd.read_csv(opt.save_path)
-        df_result = add_pair_column(df_result)
-        df_result = test_result_df_ratio_proc(df_result)
-        df_result.to_csv(opt.save_path, index=False)
-
-        df_flt, df_end = test_result_df_filter(df_result, filter_threshold=opt.filter_threshold, keep=opt.pair_keep)
         save_path = opt.save_path.replace('.csv', f'_dedup_{opt.filter_threshold}_post_proc.csv')
-        df_end.to_csv(save_path, index=False)
-
+        stream_postprocess(
+            hyper_writer.paths,
+            opt.save_path,
+            save_path,
+            filter_threshold=opt.filter_threshold,
+            keep=opt.pair_keep,
+            work_dir=f'{opt.intermediate_dir}/PostProcess',
+        )

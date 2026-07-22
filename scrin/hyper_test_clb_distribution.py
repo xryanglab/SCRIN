@@ -19,21 +19,10 @@ from threading import Lock
 from threading import Event
 from scrin.core.neighborhood import region_function_cell_multi_proc, region_function_cell_multi_proc_nine_grid, region_function_cell_multi_proc_distribution
 from scrin.tools.result_proc import add_pair_column, test_result_df_filter, test_result_df_ratio_proc
-
-
-def split_list_into_sublists(input_list, num_sublists):
-    avg = len(input_list) // num_sublists
-    remainder = len(input_list) % num_sublists
-    sublists = []
-
-    start = 0
-    for i in range(num_sublists):
-        sublist_size = avg + (1 if i < remainder else 0)
-        sublist = input_list[start:start + sublist_size]
-        sublists.append(sublist)
-        start += sublist_size
-
-    return sublists
+from scrin.tools.stream_results import ChunkedCSVWriter, collect_qvalue_pairs, prepare_hyper_result, stream_postprocess
+from scrin.core.parallel import split_list_into_sublists, robust_send
+from scrin.core.statistics import test_function
+from scrin.core.distribution import build_distribution_shape_tasks, distribution_shape_calculate_batch, shape_correct
 
 
 def large_bcast(data, comm, rank, size, root=0):
@@ -72,21 +61,6 @@ def compress_dict(data_dict):
 def decompress_dict(compressed_data):
     packed = zlib.decompress(compressed_data)
     return msgpack.unpackb(packed, raw=False)
-
-
-def robust_send(data, dest, tag, comm, rank, max_retries=5, retry_interval=1):
-    retries = 0
-    while retries < max_retries:
-        try:
-            comm.send(data, dest=dest, tag=tag)
-            # print("Send successful")
-            return  # Successfully sent, exit function
-        except Exception as e:  # Catch all exceptions
-            print(f"Rank {rank}: Send failed with exception: {e}. Retrying...")
-            time.sleep(retry_interval)
-            retries += 1
-    print("Failed to send data after retries. Raising exception.")
-    raise  # Rethrows the last caught exception
 
 
 def send_gene_list(gene_list, comm, rank, size):
@@ -141,7 +115,8 @@ def merge_dicts(count_matrix, gene2idx):
     return merged_list
 
 
-def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, task_tag, result_recv=True):
+def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, task_tag, result_recv=True,
+                             result_handler=None):
     """
     Dynamically assign tasks to processes and collect results
     :param comm: MPI communicator
@@ -178,7 +153,10 @@ def distribute_tasks_dynamic(comm, rank, size, tasks, task_processor, task_tag, 
             result = comm.recv(source=MPI.ANY_SOURCE, tag=155, status=status)
 
             if result_recv:
-                task_results.append(result)
+                if result_handler is not None:
+                    result_handler(result)
+                else:
+                    task_results.append(result)
 
             active_workers -= 1
             task_completed += 1
@@ -505,7 +483,7 @@ def distribute_tasks_dynamic_multi_asyn(comm, rank, size, tasks, task_processor,
         # Collect the results and continue distributing the remaining tasks
         while active_workers > 0:
             status = MPI.Status()
-            result = comm.recv(source=MPI.ANY_SOURCE, tag=701, status=status)
+            comm.recv(source=MPI.ANY_SOURCE, tag=701, status=status)
 
             active_workers -= 1
             task_completed += 1
@@ -519,92 +497,43 @@ def distribute_tasks_dynamic_multi_asyn(comm, rank, size, tasks, task_processor,
             else:
                 robust_send(None, dest=status.source, tag=700, comm=comm, rank=rank, max_retries=10, retry_interval=60)
 
-        # Wait for all workers to finish and send their status
-        done_flags = [False] * size
-        done_flags[0] = True  # Rank 0 is always done
-        time_waiter = 0  # Wait time counter
-
-        while not (all(done_flags) and time_waiter >= 5):
-            while comm.iprobe(source=MPI.ANY_SOURCE, tag=703):
-                status = MPI.Status()
-                msg = comm.recv(source=MPI.ANY_SOURCE, tag=703, status=status)
-                src = status.Get_source()
-                if msg == "done":
-                    # print(f"[Rank {rank}] Received 'done' signal from process {src}. Marking as completed.")
-                    done_flags[src] = True
-                elif msg == "not_done":
-                    # print(f"[Rank {rank}] Received 'not_done' signal from process {src}. Marking as incomplete.")
-                    done_flags[src] = False
-
-            time.sleep(0.05)  # Reduce CPU usage
-
-            if all(done_flags):
-                time_waiter += 0.05
-                print(f"[Rank {rank}] All processes marked as done. Waiting to confirm stability: {time_waiter:.2f} seconds")
-            else:
-                # if time_waiter > 0:
-                #     print(f"[Rank {rank}] Status changed. Resetting stability wait timer.")
-                time_waiter = 0
-                # print(f"[Rank {rank}] Current done_flags status: {done_flags}")
-
-        # Notify all processes that all tasks are completed
-        print(f"All tasks completed. Notifying all processes to exit. Rank {rank}")
+        # A task acknowledgement is sent only after that worker has completed
+        # all of its inter-rank update sends. Once active_workers reaches zero,
+        # no new distribution updates can be created.
+        print(f"All distribution-file tasks completed. Notifying workers to drain pending updates. Rank {rank}")
         for i in range(1, size):
             robust_send("all_done", dest=i, tag=704, comm=comm, rank=rank, max_retries=10, retry_interval=60)
 
+        # First barrier: all outgoing sends are finished. Second barrier: all
+        # asynchronous receivers have drained their queues, written their files,
+        # and shut down.
+        comm.Barrier()
+        comm.Barrier()
         return None
 
     else:
-        executor = ThreadPoolExecutor(max_workers=1)  # Create a separate thread for processing results
+        executor = ThreadPoolExecutor(max_workers=1)
         is_idle = Event()
-        is_idle.set()  # Initially set to idle
-        # Asynchronous exit flag
+        is_idle.set()
         stop_event = Event()
 
-        task_finished = False  # Task finished flag for non-root processes
-
-        local_matrix_pool = []  # Local update pool for storing local updates
-        local_pool_lock = Lock()  # Lock to protect the local update pool
+        local_matrix_pool = []
+        local_pool_lock = Lock()
 
         output_path = distribution_output_path + f"/rank_{rank}"
-        future = executor.submit(asyn_func, comm, output_path, is_idle, 777, local_matrix_pool, local_pool_lock, stop_event)
+        future = executor.submit(
+            asyn_func, comm, output_path, is_idle, 777,
+            local_matrix_pool, local_pool_lock, stop_event
+        )
 
         while True:
+            if future.done():
+                future.result()  # Surface receiver failures instead of waiting silently.
+
             if comm.iprobe(source=0, tag=700):
                 task = comm.recv(source=0, tag=700)
-                if task is None:
-                    # print(f"Rank {rank} received None from root rank, no more tasks.")
-                    task_finished = True
             else:
                 task = None
-
-            now_message = comm.iprobe(source=MPI.ANY_SOURCE, tag=777)
-
-            while task is None and is_idle.is_set() and len(local_matrix_pool) == 0 and not now_message and task_finished:
-                # If there are no tasks and the current process is idle, wait for new tasks or state changes
-                # print(f"Rank {rank} is idle and has no local updates. Waiting for new tasks or region processing state change.")
-                time.sleep(1.0)  # Send an idle signal every second
-                # Send idle signal to root process
-                info_done = comm.isend("done", dest=0, tag=703)
-                info_done.wait()
-
-                # Check if there are any update requests from other processes, if so, stop waiting and send not_done signal
-                now_message = comm.iprobe(source=MPI.ANY_SOURCE, tag=777)
-                task_from_root = comm.iprobe(source=0, tag=700)
-                if now_message:
-                    # print(f"Rank {rank} received an update request while waiting. Processing updates.")
-                    info_not_done = comm.isend("not_done", dest=0, tag=703)
-                    info_not_done.wait()
-                    break
-
-                if task_from_root:
-                    # print(f"Rank {rank} received a new task from root while waiting.")
-                    info_not_done = comm.isend("not_done", dest=0, tag=703)
-                    info_not_done.wait()
-                    break
-
-                if comm.iprobe(source=0, tag=704):  # Check if the root process has sent an exit signal
-                    break
 
             if task is not None:
                 result = task_processor(task)
@@ -613,34 +542,45 @@ def distribute_tasks_dynamic_multi_asyn(comm, rank, size, tasks, task_processor,
 
             if result is not None:
                 for re_i in result:
-                    des_rank = re_i[0]  # Get the destination rank
-                    updates = re_i[1]  # Get the updates to be sent
+                    des_rank = re_i[0]
+                    updates = re_i[1]
 
                     if des_rank == rank:
                         with local_pool_lock:
-                            local_matrix_pool.append(updates)  # Add updates to the local pool
+                            local_matrix_pool.append(updates)
                     else:
                         req = comm.isend(updates, dest=des_rank, tag=777)
                         req.wait()
 
-            if result is not None:
                 robust_send("yes", dest=0, tag=701, comm=comm, rank=rank, max_retries=10, retry_interval=60)
 
-            # Check if all processes have completed and wait for the root process to notify
-            status2 = MPI.Status()
-            if comm.iprobe(source=0, tag=704, status=status2):
+            if comm.iprobe(source=0, tag=704):
                 msg = comm.recv(source=0, tag=704)
                 if msg == "all_done":
-                    print(f"Rank {rank} received all_done signal. Exiting.")
-                    stop_event.set()
+                    print(f"Rank {rank} received all_done signal. Draining pending distribution updates.")
                     break
 
-            time.sleep(0.01)  # Reduce CPU usage
+            time.sleep(0.01)
 
-        while not is_idle.is_set():
-            time.sleep(0.05)
+        # Rank 0 sends all_done only after every task processor has finished its
+        # outgoing sends. Synchronize before checking the finite receive queue.
+        comm.Barrier()
+        while True:
+            if future.done():
+                future.result()
 
-        # executor.shutdown()
+            with local_pool_lock:
+                local_updates_pending = bool(local_matrix_pool)
+            mpi_updates_pending = comm.iprobe(source=MPI.ANY_SOURCE, tag=777)
+
+            if is_idle.is_set() and not local_updates_pending and not mpi_updates_pending:
+                break
+            time.sleep(0.01)
+
+        stop_event.set()
+        future.result()
+        executor.shutdown(wait=True)
+        comm.Barrier()
         return None
 
 
@@ -698,20 +638,6 @@ def merge_distribution_dicts_from_file(intermediate_dir):
     return merged_distribution_dict
 
 
-def test_function(gene_B_around_num, gene_A_N, gene_B_N,
-                  gene_slice_num, gene_around_num, minGenenumber, expressionLevel):
-
-    if (gene_around_num < minGenenumber or
-            gene_A_N / gene_B_N > expressionLevel or gene_B_N / gene_A_N > expressionLevel):
-        return None
-
-    a = hypergeom.sf(k=gene_B_around_num - 1, M=gene_slice_num, n=gene_B_N,
-                     N=gene_around_num)
-    para_list = [gene_B_around_num, gene_B_N, gene_around_num, gene_slice_num, gene_A_N]
-
-    return [a, para_list]
-
-
 def hyper_test(tuple_proc, min_gene_number, expression_level):
 
     gene_id = tuple_proc[0]
@@ -752,68 +678,6 @@ def hyper_test(tuple_proc, min_gene_number, expression_level):
     })
 
     return results_df
-
-
-def compute_shape_para(distances, bw=0.05):
-    shape_count = len(distances)
-
-    kde = gaussian_kde(distances, bw_method=bw)
-    x = np.linspace(min(distances), max(distances), 1000)
-    density = kde.evaluate(x)
-    mode = x[np.argmax(density)]
-
-    skewness = skew(distances)
-    kurt = kurtosis(distances)
-
-    median = np.median(distances)
-
-    q75, q25 = np.percentile(distances, [75, 25])
-    iqr = q75 - q25
-
-    return shape_count, mode, skewness, kurt, median, q25, q75, iqr
-
-
-def distribution_shape_calculate(tuple_proc, around_count_threshold=100):
-    gene_id = tuple_proc[0]
-    gene_dist_dict = tuple_proc[1]
-
-    gene_id_around_list, dist_list = [], []
-
-    for gene_id_around, dist_list_around in gene_dist_dict.items():
-        if len(dist_list_around) >= around_count_threshold:
-            gene_id_around_list.append(gene_id_around)
-            shape_count, mode, skewness, kurt, median, q25, q75, iqr = compute_shape_para(dist_list_around)
-            dist_list.append([shape_count, mode, skewness, kurt, median, q25, q75, iqr])
-        else:
-            continue
-
-    if len(dist_list) == 0:
-        return None
-
-    results_df = pd.DataFrame({
-        'gene_A': [gene_id] * len(dist_list),
-        'gene_B': gene_id_around_list,
-        'shape_count': [_[0] for _ in dist_list],
-        'mode': [_[1] for _ in dist_list],
-        'skewness': [_[2] for _ in dist_list],
-        'kurtosis': [_[3] for _ in dist_list],
-        'median': [_[4] for _ in dist_list],
-        'q25': [_[5] for _ in dist_list],
-        'q75': [_[6] for _ in dist_list],
-        'iqr': [_[7] for _ in dist_list]
-    })
-
-    return results_df
-
-
-def shape_correct(df_result, opt):
-    df_result.loc[:, 'skewness_adjusted'] = 1 / (1 + np.exp(df_result['skewness']))
-    df_result.loc[:, 'skewness_relative'] = df_result['skewness'] + 0.566
-    df_result.loc[:, 'kurtosis_relative'] = df_result['kurtosis'] + 0.6
-    df_result.loc[:, 'median_relative'] = df_result['median'] - (0.707 * opt.r_dist)
-    df_result.loc[:, 'q25_relative'] = df_result['q25'] - (0.5 * opt.r_dist)
-    df_result.loc[:, 'q75_relative'] = df_result['q75'] - (0.866 * opt.r_dist)
-    return df_result
 
 
 def hyper_test_clb_distribution(opt):
@@ -1064,13 +928,31 @@ def hyper_test_clb_distribution(opt):
                             expression_level=expression_level_local)
 
     if rank == 0:
-        result_output = distribute_tasks_dynamic(comm, rank, size, tuple_around, partial_func2, 'HyperTest')
+        result_intermediate_dir = opt.intermediate_dir or f'{opt.save_path}.intermediate'
+        hyper_result_dir = os.path.join(result_intermediate_dir, 'HyperTestResults')
+        if os.path.exists(hyper_result_dir):
+            shutil.rmtree(hyper_result_dir)
+        hyper_writer = ChunkedCSVWriter(hyper_result_dir, 'HyperTest', transform=prepare_hyper_result)
+        distribute_tasks_dynamic(
+            comm, rank, size, tuple_around, partial_func2, 'HyperTest',
+            result_handler=hyper_writer.write,
+        )
     else:
+        result_intermediate_dir = None
+        hyper_writer = None
         distribute_tasks_dynamic(comm, rank, size, tuple_around, partial_func2, 'HyperTest')
-        result_output = None
 
     # Wait for all processes to finish the hypergeometric test
     comm.Barrier()
+    if rank == 0 and opt.distribution_analysis:
+        shape_eligible_pairs = collect_qvalue_pairs(
+            hyper_writer.paths, opt.shape_qvalue_threshold
+        )
+        print(f"Directed pairs eligible for shape calculation (qvalue_BH < "
+              f"{opt.shape_qvalue_threshold}): {len(shape_eligible_pairs)}")
+    else:
+        shape_eligible_pairs = None
+
 
     # if opt.r_dist is not None and opt.intermediate_dir is not None:
     if opt.distribution_analysis:
@@ -1097,9 +979,14 @@ def hyper_test_clb_distribution(opt):
                 comm.Barrier()
 
     if rank == 0:
-        result_output_shape_list = []
+        shape_result_dir = os.path.join(result_intermediate_dir, 'DistanceShapeResults')
+        if os.path.exists(shape_result_dir):
+            shutil.rmtree(shape_result_dir)
+        shape_writer = ChunkedCSVWriter(
+            shape_result_dir, 'DistanceShape', transform=lambda df: shape_correct(df, opt)
+        )
     else:
-        result_output_shape_list = None
+        shape_writer = None
 
     # if opt.r_dist is not None and opt.intermediate_dir is not None:
     if opt.distribution_analysis:
@@ -1118,8 +1005,16 @@ def hyper_test_clb_distribution(opt):
                 print(f"Found {len(pkl_list)} distribution files to merge for rank {i}.")
                 merged_distribution_dict = merge_distribution_dicts_from_file(pkl_list)
 
-                tuple_dist = [(gene_id, gene_distance_dict) for gene_id, gene_distance_dict in
-                              merged_distribution_dict.items()]
+                tuple_dist = build_distribution_shape_tasks(
+                    merged_distribution_dict,
+                    around_count_threshold=opt.around_count_threshold,
+                    shape_max_distance_count=opt.shape_max_distance_count,
+                    target_task_count=max(1, (size - 1) * 4),
+                    eligible_pairs=shape_eligible_pairs,
+                )
+                shape_pair_count = sum(len(batch) for batch in tuple_dist)
+                print(f"Prepared {shape_pair_count} q-value-eligible pairs in "
+                      f"{len(tuple_dist)} balanced distribution-shape tasks.")
 
                 merged_distribution_dict = None
             else:
@@ -1127,53 +1022,46 @@ def hyper_test_clb_distribution(opt):
                 merged_output_path = None
 
             # Task 4: Calculate distribution shape
-            partial_func4 = partial(distribution_shape_calculate, around_count_threshold=opt.around_count_threshold)
+            partial_func4 = distribution_shape_calculate_batch
 
             if rank == 0:
                 print(f"Distribution shape calculation is processing. Path: {merged_output_path}")
-                result_output_shape = distribute_tasks_dynamic(comm, rank, size, tuple_dist, partial_func4, 'ShapeCalculate')
-                result_output_shape_list.append(result_output_shape)
-
+                distribute_tasks_dynamic(
+                    comm, rank, size, tuple_dist, partial_func4, 'ShapeCalculate',
+                    result_handler=shape_writer.write,
+                )
             else:
                 distribute_tasks_dynamic(comm, rank, size, tuple_dist, partial_func4, 'ShapeCalculate')
-                result_output_shape = None
 
             comm.Barrier()
 
 
     if rank == 0:
         if opt.distribution_analysis:
-            result_output_shape_list = [item for sublist in result_output_shape_list for item in sublist if item is not None]
-
-        # joblib.dump(gene_rank_dict, os.path.join(opt.save_path.replace('.csv', '_gene_rank_dict.pkl')))
-        if opt.distribution_analysis:
             joblib.dump(gene_rank_dict, f"{opt.intermediate_dir}/gene_rank_dict.pkl")
 
-        # remove None results and concatenate into a single DataFrame
-        result_output = [result for result in result_output if result is not None]
-        if len(result_output) == 0:
+        if not hyper_writer.paths:
             print("No significant gene pairs found. Please consider adjusting the filtering parameters.")
             return
-        df_result = pd.concat(result_output)
-        df_result = add_pair_column(df_result)
-        df_result = test_result_df_ratio_proc(df_result)
-        df_result.to_csv(opt.save_path, index=False)
-
-        if len(result_output_shape_list) == 0:
-            # print("No distribution shape data. Around count threshold may be too high.")
-            df_merge = df_result
-        else:
-            df_shape = pd.concat(result_output_shape_list)
-            df_shape = shape_correct(df_shape, opt)
-            df_shape.to_csv(opt.save_path.replace('.csv', '_shape.csv'), index=False)
-
-            df_merge = pd.merge(df_result, df_shape, on=['gene_A', 'gene_B'], how='left')
-
-        df_merge_pair_dedup, df_merge_pair_filter = test_result_df_filter(df_merge, filter_threshold=opt.filter_threshold,
-                                                                keep=opt.pair_keep)
 
         if opt.distribution_analysis:
             save_path = opt.save_path.replace('.csv', f'_dedup_{opt.filter_threshold}_post_proc_shape.csv')
+            shape_files = shape_writer.paths
+            shape_output_path = opt.save_path.replace('.csv', '_shape.csv') if shape_files else None
         else:
             save_path = opt.save_path.replace('.csv', f'_dedup_{opt.filter_threshold}_post_proc.csv')
-        df_merge_pair_filter.to_csv(save_path, index=False)
+            shape_files = []
+            shape_output_path = None
+
+        stream_postprocess(
+            hyper_writer.paths,
+            opt.save_path,
+            save_path,
+            filter_threshold=opt.filter_threshold,
+            keep=opt.pair_keep,
+            work_dir=os.path.join(result_intermediate_dir, 'PostProcess'),
+            shape_files=shape_files,
+            shape_output_path=shape_output_path,
+        )
+
+
